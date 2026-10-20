@@ -92,3 +92,31 @@ export function formatDate(value: string) {
 export function apiMessage(error: any, fallback = '操作失败') {
   return error?.response?.data?.message || fallback
 }
+
+const LAST_ACCOUNT_STORAGE_KEY = 'bill-last-account-id'
+
+/** 读取上次记账时使用的收支账户 id，没有记录时返回 0。 */
+export function readLastAccountId(): number {
+  if (typeof localStorage === 'undefined') return 0
+  const id = Number.parseInt(localStorage.getItem(LAST_ACCOUNT_STORAGE_KEY) || '', 10)
+  return Number.isInteger(id) && id > 0 ? id : 0
+}
+
+/** 记住本次使用的收支账户，下次记账时默认选中。 */
+export function rememberAccountId(id: number) {
+  if (typeof localStorage === 'undefined') return
+  if (!Number.isInteger(id) || id <= 0) return
+  localStorage.setItem(LAST_ACCOUNT_STORAGE_KEY, String(id))
+}
+
+/**
+ * 计算新建账单时的默认收支账户：
+ * 依次尝试候选值（上次使用的账户、当前筛选的账户），都不存在时回退到第一个账户。
+ */
+export function pickDefaultAccountId(accounts: Array<{ id: number }>, candidates: number[] = []): number {
+  const ids = accounts.map(item => item.id)
+  for (const candidate of candidates) {
+    if (candidate && ids.includes(candidate)) return candidate
+  }
+  return accounts[0]?.id || 0
+}

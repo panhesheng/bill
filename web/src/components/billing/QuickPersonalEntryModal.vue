@@ -87,7 +87,7 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { billingApi, type BillKind, type PersonalAccount, type PersonalCategory, type PersonalLedger, type PersonalTag } from '../../api/billing'
-import { apiMessage, moneyToCents, toLocalInput } from '../../utils/billing'
+import { apiMessage, moneyToCents, pickDefaultAccountId, readLastAccountId, rememberAccountId, toLocalInput } from '../../utils/billing'
 import Modal from '../Modal.vue'
 import CategoryPicker from './CategoryPicker.vue'
 import PersonalTagInput from './PersonalTagInput.vue'
@@ -119,7 +119,7 @@ const form = reactive({
 const currentCategories = computed(() => categories.value.filter(item => item.kind === form.kind).map(item => item.name))
 
 function resetForm() {
-  Object.assign(form, { ledger_id: ledgers.value[0]?.id || 0, account_id: accounts.value[0]?.id || 0, kind: 'expense', amount: '', category: '', tag_ids: [], note: '', occurred_at: toLocalInput() })
+  Object.assign(form, { ledger_id: ledgers.value[0]?.id || 0, account_id: pickDefaultAccountId(accounts.value, [readLastAccountId()]), kind: 'expense', amount: '', category: '', tag_ids: [], note: '', occurred_at: toLocalInput() })
   formError.value = ''
 }
 
@@ -165,6 +165,7 @@ async function save() {
       occurred_at: new Date(form.occurred_at).toISOString(),
       tag_ids: form.tag_ids,
     })
+    rememberAccountId(form.account_id)
     emit('update:modelValue', false)
     emit('saved')
   } catch (error) {
@@ -189,7 +190,7 @@ watch(() => props.modelValue, async value => {
     categories.value = Array.isArray(categoryData) ? categoryData : categoryData?.items || []
     tags.value = Array.isArray(tagData) ? tagData : tagData?.items || []
     form.ledger_id = ledgers.value[0]?.id || 0
-    form.account_id = accounts.value[0]?.id || 0
+    form.account_id = pickDefaultAccountId(accounts.value, [readLastAccountId()])
   } catch (error) {
     formError.value = apiMessage(error, '账本资料加载失败')
   } finally {

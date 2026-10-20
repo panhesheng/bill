@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { centsToMoney, isSplitValid, moneyToCents, splitByWeights, splitEqually, splitExactly } from './billing'
+import { centsToMoney, isSplitValid, moneyToCents, pickDefaultAccountId, splitByWeights, splitEqually, splitExactly } from './billing'
 
 describe('money conversion', () => {
   it('converts decimal money without floating point leakage', () => {
@@ -50,5 +50,22 @@ describe('shared bill splits', () => {
     expect(isSplitValid('percent', 100, ids, { 11: 'not-a-number', 22: 100, 33: 0 })).toBe(false)
     expect(splitByWeights(100, ids, { 11: -1, 22: 2, 33: 0 })).toEqual([])
     expect(splitExactly(ids, { 11: '-1', 22: '2', 33: '0' })).toEqual([])
+  })
+})
+
+describe('default account selection', () => {
+  const accounts = [{ id: 1 }, { id: 2 }, { id: 3 }]
+
+  it('prefers the last used account', () => {
+    expect(pickDefaultAccountId(accounts, [2, 3])).toBe(2)
+  })
+
+  it('falls back to the next candidate when the remembered account no longer exists', () => {
+    expect(pickDefaultAccountId(accounts, [99, 3])).toBe(3)
+  })
+
+  it('falls back to the first account when nothing matches', () => {
+    expect(pickDefaultAccountId(accounts, [99])).toBe(1)
+    expect(pickDefaultAccountId([], [2])).toBe(0)
   })
 })
