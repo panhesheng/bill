@@ -39,7 +39,11 @@ type statsSummary struct {
 }
 
 type categoryStat struct {
-	Category    string `json:"category"`
+	Category string `json:"category"`
+	// Parent is the first level category of the second level category the
+	// record was booked on. It is empty for records booked on a first level
+	// category directly.
+	Parent      string `json:"parent"`
 	AmountCents int64  `json:"amount_cents"`
 	Count       int64  `json:"count"`
 }
@@ -525,9 +529,16 @@ func personalStatsForLedger(db *gorm.DB, userID uint, start, end string, ledgerI
 	summary.BalanceCents = summary.IncomeCents - summary.ExpenseCents
 
 	var categories []categoryStat
-	if err := base.Where("kind = ?", KindExpense).
-		Select("category, SUM(amount_cents) AS amount_cents, COUNT(*) AS count").
-		Group("category").Order("amount_cents DESC").Scan(&categories).Error; err != nil {
+	// The category of a record is a name, so the first level category is
+	// resolved through the category tree. Records booked on a first level
+	// category directly keep an empty parent.
+	categoryQuery := applyStatsRange(db.Table("personal_transactions").
+		Select("personal_transactions.category AS category, COALESCE(parent_category.name, '') AS parent, SUM(personal_transactions.amount_cents) AS amount_cents, COUNT(*) AS count").
+		Joins("LEFT JOIN personal_categories child_category ON child_category.user_id = personal_transactions.user_id AND child_category.kind = personal_transactions.kind AND child_category.name = personal_transactions.category").
+		Joins("LEFT JOIN personal_categories parent_category ON parent_category.id = child_category.parent_id"), userID, start, end, ledgerID)
+	if err := categoryQuery.Where("personal_transactions.kind = ?", KindExpense).
+		Group("personal_transactions.category, parent").
+		Order("amount_cents DESC").Scan(&categories).Error; err != nil {
 		return summary, nil, nil, err
 	}
 
@@ -738,7 +749,14 @@ func handlePersonalStats(db *gorm.DB) gin.HandlerFunc {
 			response.ErrorInternal(c, "统计分析失败")
 			return
 		}
-		response.Success(c, gin.H{"summary": summary, "categories": categories, "trend": trend, "ledgers": ledgers, "tags": tags, "daily": daily, "weekdays": weekdays})
+		// The years the user recorded something in feed the year picker of the
+		// statistics page so the quick range never offers an empty year.
+		years, err := personalFlowYears(db, c.GetUint("userID"))
+		if err != nil {
+			response.ErrorInternal(c, "统计分析失败")
+			return
+		}
+		response.Success(c, gin.H{"summary": summary, "categories": categories, "trend": trend, "ledgers": ledgers, "tags": tags, "daily": daily, "weekdays": weekdays, "available_years": years})
 	}
 }
 

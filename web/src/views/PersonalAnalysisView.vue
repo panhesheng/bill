@@ -5,7 +5,25 @@
     <section class="surface rounded-2xl p-4 sm:p-5" aria-labelledby="analysis-filter-title">
       <h2 id="analysis-filter-title" class="sr-only">统计筛选</h2>
       <MobileFilterDisclosure v-model="filtersExpanded" panel-id="analysis-filters" title="统计筛选" :summary="analysisFilterSummary" :active-count="analysisFilterCount">
-        <form class="grid gap-3 sm:grid-cols-2 xl:grid-cols-[1.25fr_1fr_1fr_auto]" @submit.prevent="applyFilters">
+        <form class="grid gap-3 sm:grid-cols-2 xl:grid-cols-[1.25fr_1fr_1fr_auto]" @submit.prevent="applyFilters()">
+        <div class="flex flex-wrap items-end gap-2 sm:col-span-2 xl:col-span-4">
+          <label class="filter-field">
+            <span>按年</span>
+            <select v-model="filters.year" class="input-field h-10 min-h-10 w-32 py-0 text-sm" @change="onYearChange">
+              <option value="">不限年份</option>
+              <option v-for="year in yearOptions" :key="year" :value="String(year)">{{ year }} 年</option>
+            </select>
+          </label>
+          <label class="filter-field">
+            <span>按月</span>
+            <select v-model="filters.month" class="input-field h-10 min-h-10 w-28 py-0 text-sm" @change="onMonthChange">
+              <option value="">不限月份</option>
+              <option v-for="month in monthOptions" :key="month" :value="String(month).padStart(2, '0')">{{ month }} 月</option>
+            </select>
+          </label>
+          <button type="button" class="btn-ghost h-10 min-h-10 px-4 py-0 text-xs" @click="resetToCurrentMonth">回到本月</button>
+          <span class="text-xs text-muted-foreground">选年份自动填充 1-1 至 12-31，选月份自动填充当月首日至最后一天</span>
+        </div>
         <label class="filter-field">
           <span>账本</span>
           <select v-model="filters.ledger_id" class="input-field" aria-describedby="ledger-filter-hint">
@@ -16,11 +34,11 @@
         </label>
         <label class="filter-field">
           <span>开始日期</span>
-          <input v-model="filters.start" type="date" class="input-field" />
+          <input v-model="filters.start" type="date" class="input-field" @change="syncQuickRange" />
         </label>
         <label class="filter-field">
           <span>结束日期</span>
-          <input v-model="filters.end" type="date" class="input-field" />
+          <input v-model="filters.end" type="date" class="input-field" @change="syncQuickRange" />
         </label>
         <button class="btn-brand min-h-11 self-end xl:min-w-28" :disabled="loading">
           <svg v-if="loading" class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3"/><path class="opacity-75" d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-linecap="round" stroke-width="3"/></svg>
@@ -94,9 +112,9 @@
           </template>
         </section>
 
-        <RankingChart title="支出分类" description="按支出金额从高到低，最多显示 8 项" :items="categoryRows" empty-text="当前范围暂无分类支出" value-label="金额" />
+        <CategoryChart :mode="categoryMode" :drill="categoryDrill" :rows="categoryRows" empty-text="当前范围暂无分类支出" @update:mode="setCategoryMode" @update:drill="drillCategory" />
         <RankingChart title="账本对比" description="不同账本的支出规模与记录数" :items="ledgerRows" empty-text="当前范围暂无账本数据" value-label="支出" />
-        <RankingChart title="标签排名" description="按标签关联金额从高到低，最多显示 8 项" :items="tagRows" empty-text="当前范围暂无标签数据" value-label="金额" />
+        <RankingChart title="标签排名" description="按标签关联金额从高到低" :items="tagRows" empty-text="当前范围暂无标签数据" value-label="金额" />
         <RankingChart title="星期分布" description="查看支出集中在一周中的哪些日子" :items="weekdayRows" empty-text="当前范围暂无星期分布" value-label="支出" />
       </div>
     </template>
@@ -114,7 +132,7 @@ import Toast from '../components/Toast.vue'
 import MobileFilterDisclosure from '../components/MobileFilterDisclosure.vue'
 
 interface Summary { income_cents: number; expense_cents: number; balance_cents: number; count: number }
-interface CategoryStat { category: string; amount_cents: number; count: number }
+interface CategoryStat { category: string; parent?: string; amount_cents: number; count: number }
 interface TrendStat { month: string; income_cents: number; expense_cents: number }
 interface LedgerStat { ledger_id?: number; id?: number; ledger_name?: string; name?: string; income_cents: number; expense_cents: number; count: number }
 interface TagStat { tag_id?: number; id?: number; tag?: string; name?: string; amount_cents: number; count: number }
@@ -128,35 +146,82 @@ interface AnalysisStats {
   tags: TagStat[]
   daily: DailyStat[]
   weekdays: WeekdayStat[]
+  available_years?: number[]
 }
 interface LedgerOption { id: number; name: string }
 interface TrendPoint { label: string; income_cents: number; expense_cents: number }
 interface RankingRow { key: string; label: string; amount_cents: number; count: number; detail?: string }
 
 const today = new Date()
+const currentYear = today.getFullYear()
 const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
-const filters = reactive({ start: localDate(firstDay), end: localDate(today), ledger_id: '' })
-const applied = reactive({ start: filters.start, end: filters.end, ledger_id: '' })
+const filters = reactive({ start: localDate(firstDay), end: localDate(today), ledger_id: '', year: '', month: '' })
+const applied = reactive({ start: filters.start, end: filters.end, ledger_id: '', year: '', month: '' })
 const loading = ref(false)
 const hasLoaded = ref(false)
 const filtersExpanded = ref(false)
 const errorMessage = ref('')
 const filterError = ref('')
+const categoryMode = ref<'sub' | 'primary'>('sub')
+const categoryDrill = ref('')
 const ledgerOptions = ref<LedgerOption[]>([])
 const emptySummary = (): Summary => ({ income_cents: 0, expense_cents: 0, balance_cents: 0, count: 0 })
-const stats = reactive<AnalysisStats>({ summary: emptySummary(), categories: [], trend: [], ledgers: [], tags: [], daily: [], weekdays: [] })
+const stats = reactive<AnalysisStats>({ summary: emptySummary(), categories: [], trend: [], ledgers: [], tags: [], daily: [], weekdays: [], available_years: [] })
 
 const savingRate = computed(() => stats.summary.income_cents ? Math.round(stats.summary.balance_cents / stats.summary.income_cents * 100) : 0)
 const scopeLabel = computed(() => applied.ledger_id ? (ledgerOptions.value.find(item => String(item.id) === applied.ledger_id)?.name || '指定账本') : '全部账本')
 const dateRangeLabel = computed(() => `${applied.start || '不限开始日期'} 至 ${applied.end || '不限结束日期'}`)
 const analysisFilterSummary = computed(() => `${scopeLabel.value} · ${dateRangeLabel.value}`)
 const analysisFilterCount = computed(() => [applied.ledger_id, applied.start, applied.end].filter(Boolean).length)
+const yearOptions = computed(() => {
+  const years = new Set<number>()
+  const recorded = stats.available_years || []
+  recorded.forEach(item => { if (Number.isFinite(item) && item > 0) years.add(item) })
+  years.add(currentYear)
+  const selected = Number(filters.year)
+  if (selected > 0) years.add(selected)
+  return [...years].sort((a, b) => b - a)
+})
+const monthOptions = computed(() => Array.from({ length: 12 }, (_, index) => index + 1))
 const trendSeries = computed<TrendPoint[]>(() => stats.daily.map(item => ({ label: item.date, income_cents: item.income_cents, expense_cents: item.expense_cents })))
 const trendDescription = computed(() => '按日展示筛选区间内的收入与支出')
 
-const categoryRows = computed(() => stats.categories.slice().sort((a, b) => b.amount_cents - a.amount_cents).slice(0, 8).map((item, index) => ({ key: `${item.category}-${index}`, label: item.category || '未分类', amount_cents: item.amount_cents, count: item.count })))
+const categoryRows = computed<RankingRow[]>(() => {
+  const rows = stats.categories || []
+  if (categoryMode.value === 'primary') {
+    if (categoryDrill.value) {
+      const target = categoryDrill.value
+      const details = rows
+        .filter(item => item.parent === target)
+        .map(item => ({ key: `sub-${item.category}`, label: item.category || '未分类', amount_cents: item.amount_cents, count: item.count }))
+      const direct = rows
+        .filter(item => !item.parent && item.category === target)
+        .map(item => ({ key: `direct-${item.category}`, label: '未细分', amount_cents: item.amount_cents, count: item.count, detail: `直接记在「${item.category}」` }))
+      return [...details, ...direct].sort((a, b) => b.amount_cents - a.amount_cents)
+    }
+    const grouped = new Map<string, RankingRow>()
+    rows.forEach(item => {
+      const key = item.parent || item.category || '未分类'
+      const current = grouped.get(key)
+      if (current) {
+        current.amount_cents += item.amount_cents
+        current.count += item.count
+      } else {
+        grouped.set(key, { key: `primary-${key}`, label: key, amount_cents: item.amount_cents, count: item.count })
+      }
+    })
+    return [...grouped.values()].sort((a, b) => b.amount_cents - a.amount_cents)
+  }
+  return rows.map(item => ({
+    key: `category-${item.category}`,
+    label: item.category || '未分类',
+    amount_cents: item.amount_cents,
+    count: item.count,
+    detail: item.parent ? `一级分类：${item.parent}` : undefined,
+  }))
+})
 const ledgerRows = computed(() => stats.ledgers.slice().sort((a, b) => b.expense_cents - a.expense_cents).map((item, index) => ({ key: String(item.ledger_id ?? item.id ?? index), label: item.ledger_name || item.name || '未命名账本', amount_cents: item.expense_cents, count: item.count, detail: item.income_cents ? `收入 ${formatMoney(item.income_cents)}` : undefined })))
-const tagRows = computed(() => stats.tags.slice().sort((a, b) => b.amount_cents - a.amount_cents).slice(0, 8).map((item, index) => ({ key: String(item.tag_id ?? item.id ?? index), label: item.tag || item.name || '未命名标签', amount_cents: item.amount_cents, count: item.count })))
+const tagRows = computed(() => stats.tags.slice().sort((a, b) => b.amount_cents - a.amount_cents).map((item, index) => ({ key: String(item.tag_id ?? item.id ?? index), label: item.tag || item.name || '未命名标签', amount_cents: item.amount_cents, count: item.count })))
 const weekdayRows = computed(() => stats.weekdays.filter(item => item.amount_cents > 0 || item.count > 0).map((item, index) => ({ key: String(item.weekday ?? index), label: weekdayLabel(item.weekday), amount_cents: item.amount_cents, count: item.count })).sort((a, b) => b.amount_cents - a.amount_cents))
 
 const chart = { width: 720, height: 280, left: 64, right: 18, top: 22, bottom: 42 }
@@ -188,6 +253,7 @@ function normalize(raw: Partial<AnalysisStats> | undefined): AnalysisStats {
     tags: Array.isArray(raw?.tags) ? raw.tags : [],
     daily: Array.isArray(raw?.daily) ? raw.daily : [],
     weekdays: Array.isArray(raw?.weekdays) ? raw.weekdays : [],
+    available_years: Array.isArray(raw?.available_years) ? raw.available_years : [],
   }
 }
 function rememberLedgers(items: LedgerStat[]) {
@@ -200,13 +266,63 @@ function rememberLedgers(items: LedgerStat[]) {
   incoming.forEach(item => merged.set(item.id, item))
   ledgerOptions.value = [...merged.values()]
 }
-function applyFilters() {
+function applyFilters(options: { collapse?: boolean } = {}) {
   filterError.value = ''
   if (filters.start && filters.end && filters.start > filters.end) { filterError.value = '开始日期不能晚于结束日期'; return }
   Object.assign(applied, filters)
-  filtersExpanded.value = false
+  if (options.collapse !== false) filtersExpanded.value = false
   load()
 }
+// Picking a year fills the whole year, picking a month fills that month.
+function onYearChange() {
+  const year = Number(filters.year)
+  filters.month = ''
+  if (!year) return
+  filters.start = `${year}-01-01`
+  filters.end = `${year}-12-31`
+  applyFilters({ collapse: false })
+}
+function onMonthChange() {
+  const month = Number(filters.month)
+  const year = Number(filters.year) || currentYear
+  if (!month) {
+    if (!Number(filters.year)) return
+    filters.start = `${year}-01-01`
+    filters.end = `${year}-12-31`
+    applyFilters({ collapse: false })
+    return
+  }
+  filters.year = String(year)
+  filters.start = `${year}-${String(month).padStart(2, '0')}-01`
+  filters.end = localDate(new Date(year, month, 0))
+  applyFilters({ collapse: false })
+}
+// Manual date edits keep the quick pickers in sync with the current range.
+function syncQuickRange() {
+  const start = filters.start
+  const end = filters.end
+  if (!start || !end || start.slice(0, 4) !== end.slice(0, 4)) {
+    filters.year = ''
+    filters.month = ''
+    return
+  }
+  filters.year = start.slice(0, 4)
+  filters.month = start.slice(5, 7) === end.slice(5, 7) ? start.slice(5, 7) : ''
+}
+function resetToCurrentMonth() {
+  filters.start = localDate(firstDay)
+  filters.end = localDate(today)
+  filters.year = ''
+  filters.month = ''
+  applyFilters({ collapse: false })
+}
+// The category chart switches between the second level categories and the
+// first level ones, and the first level view can be drilled down.
+function setCategoryMode(mode: 'sub' | 'primary') {
+  categoryMode.value = mode
+  if (mode === 'sub') categoryDrill.value = ''
+}
+function drillCategory(name: string) { categoryDrill.value = name }
 async function load() {
   loading.value = true
   errorMessage.value = ''
@@ -279,6 +395,52 @@ const RankingChart = defineComponent({
           ]),
         ]))) : h('div', { class: 'empty-state h-64' }, [h(EmptyChartIcon), h('span', { class: 'mt-3' }, props.emptyText)]),
         props.items.length ? h('table', { class: 'sr-only' }, [h('caption', `${props.title}数据`), h('thead', [h('tr', [h('th', { scope: 'col' }, '项目'), h('th', { scope: 'col' }, props.valueLabel), h('th', { scope: 'col' }, '笔数')])]), h('tbody', props.items.map(item => h('tr', { key: `table-${item.key}` }, [h('th', { scope: 'row' }, item.label), h('td', formatMoney(item.amount_cents)), h('td', String(item.count))])))]) : null,
+      ])
+    }
+  },
+})
+// The category chart shows every category of the range. It can switch to the
+// first level categories and drill down into their second level ones.
+const CategoryChart = defineComponent({
+  props: {
+    rows: { type: Array as PropType<RankingRow[]>, required: true },
+    mode: { type: String as PropType<'sub' | 'primary'>, required: true },
+    drill: { type: String, required: true },
+    emptyText: { type: String, required: true },
+  },
+  emits: ['update:mode', 'update:drill'],
+  setup(props, { emit }) {
+    const modeButton = (value: 'sub' | 'primary', label: string) => h('button', {
+      type: 'button',
+      class: ['rounded-full px-3 py-1.5 transition-colors', props.mode === value ? 'bg-brand-800 text-white dark:bg-accent dark:text-brand-900' : 'text-muted-foreground hover:text-foreground'],
+      'aria-pressed': props.mode === value ? 'true' : 'false',
+      onClick: () => emit('update:mode', value),
+    }, label)
+    return () => {
+      const max = Math.max(1, ...props.rows.map(item => item.amount_cents))
+      const drillable = props.mode === 'primary' && !props.drill
+      const rows = props.rows.map((item, index) => {
+        const body = [
+          h('div', { class: 'mb-2 flex items-start justify-between gap-3 text-sm' }, [
+            h('div', { class: 'min-w-0' }, [h('span', { class: 'block truncate font-semibold' }, `${index + 1}. ${item.label}`), item.detail ? h('span', { class: 'mt-0.5 block text-xs text-muted-foreground' }, item.detail) : null]),
+            h('span', { class: 'shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground' }, `${formatMoney(item.amount_cents)} · ${item.count} 笔`),
+          ]),
+          h('div', { class: 'h-2.5 overflow-hidden rounded-full bg-muted', role: 'img', 'aria-label': `${item.label}，金额${formatMoney(item.amount_cents)}，${item.count} 笔` }, [
+            h('div', { class: ['h-full rounded-full bg-brand-600 dark:bg-accent', index % 3 === 1 ? 'opacity-75' : index % 3 === 2 ? 'opacity-55' : ''], style: { width: `${Math.max(2, item.amount_cents / max * 100)}%` } }),
+          ]),
+        ]
+        return drillable
+          ? h('button', { type: 'button', class: 'w-full rounded-xl text-left transition-opacity hover:opacity-80', onClick: () => emit('update:drill', item.label) }, [...body, h('span', { class: 'mt-1 block text-xs font-bold text-brand-700 dark:text-brand-300' }, '查看二级分类明细 ›')])
+          : h('div', {}, body)
+      })
+      return h('section', { class: 'surface rounded-2xl p-4 sm:p-6', 'aria-label': '支出分类' }, [
+        h('div', { class: 'flex flex-wrap items-start justify-between gap-3' }, [
+          h(ChartHeading, { id: 'chart-category', title: '支出分类', description: props.drill ? `${props.drill} 的二级分类明细` : '按支出金额从高到低' }),
+          h('div', { class: 'inline-flex shrink-0 items-center gap-1 rounded-full border border-border p-0.5 text-xs font-semibold' }, [modeButton('sub', '二级分类'), modeButton('primary', '一级分类')]),
+        ]),
+        props.drill ? h('button', { type: 'button', class: 'mt-3 inline-flex items-center gap-1 text-xs font-bold text-brand-700 hover:underline dark:text-brand-300', onClick: () => emit('update:drill', '') }, '← 返回一级分类') : null,
+        props.rows.length ? h('div', { class: 'mt-6 space-y-5' }, rows) : h('div', { class: 'empty-state h-64' }, [h(EmptyChartIcon), h('span', { class: 'mt-3' }, props.emptyText)]),
+        props.rows.length ? h('table', { class: 'sr-only' }, [h('caption', '支出分类数据'), h('thead', [h('tr', [h('th', { scope: 'col' }, '分类'), h('th', { scope: 'col' }, '金额'), h('th', { scope: 'col' }, '笔数')])]), h('tbody', props.rows.map(item => h('tr', { key: `table-${item.key}` }, [h('th', { scope: 'row' }, item.label), h('td', formatMoney(item.amount_cents)), h('td', String(item.count))])))]) : null,
       ])
     }
   },
