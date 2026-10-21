@@ -5,6 +5,13 @@ import "time"
 const (
 	KindExpense = "expense"
 	KindIncome  = "income"
+	// KindTransfer marks money moved between two accounts owned by the same
+	// user. It never counts as income or expense.
+	KindTransfer = "transfer"
+	// KindRefund marks money returned for a previous expense. It references the
+	// original bill through RefundSourceID and is counted as an inflow of the
+	// month the refund happened.
+	KindRefund = "refund"
 
 	MemberOwner   = "owner"
 	MemberRegular = "member"
@@ -19,27 +26,45 @@ const (
 
 	CardKindDebit  = "debit"
 	CardKindCredit = "credit"
+
+	// TransferCategory is the fixed category of a transfer record. Transfers do
+	// not belong to the user's income/expense category tree.
+	TransferCategory = "转账"
+	// RefundCategory is the fixed category of a refund record. Refunds do not
+	// belong to the user's income/expense category tree either.
+	RefundCategory = "退款"
 )
 
 // PersonalTransaction is an income or expense owned by exactly one user.
 // AmountCents is always positive; Kind determines the direction.
+// KindTransfer moves money from AccountID to CounterpartAccountID and is
+// excluded from income/expense statistics because both accounts belong to the
+// same user.
+// KindRefund returns money for an earlier expense and points at that bill
+// through RefundSourceID.
 type PersonalTransaction struct {
-	ID          uint             `gorm:"primarykey" json:"id"`
-	UserID      uint             `gorm:"not null;index:idx_personal_user_time" json:"user_id"`
-	LedgerID    uint             `gorm:"not null;default:0;index:idx_personal_ledger_time" json:"ledger_id"`
-	AccountID   uint             `gorm:"not null;default:0;index" json:"account_id"`
-	Kind        string           `gorm:"size:16;not null;index" json:"kind"`
-	AmountCents int64            `gorm:"not null" json:"amount_cents"`
-	Category    string           `gorm:"size:64;not null;index" json:"category"`
-	Note        string           `gorm:"size:500" json:"note"`
-	OccurredAt  time.Time        `gorm:"not null;index:idx_personal_user_time" json:"occurred_at"`
-	CreatedAt   time.Time        `json:"created_at"`
-	UpdatedAt   time.Time        `json:"updated_at"`
-	LedgerName  string           `gorm:"-" json:"ledger_name"`
-	AccountName string           `gorm:"-" json:"account_name"`
-	AccountType string           `gorm:"-" json:"account_type"`
-	Tags        []PersonalTag    `gorm:"many2many:personal_transaction_tags;joinForeignKey:TransactionID;joinReferences:TagID" json:"tags"`
-	Attachments []BillAttachment `gorm:"-" json:"attachments"`
+	ID                   uint             `gorm:"primarykey" json:"id"`
+	UserID               uint             `gorm:"not null;index:idx_personal_user_time" json:"user_id"`
+	LedgerID             uint             `gorm:"not null;default:0;index:idx_personal_ledger_time" json:"ledger_id"`
+	AccountID            uint             `gorm:"not null;default:0;index" json:"account_id"`
+	CounterpartAccountID uint             `gorm:"not null;default:0;index" json:"counterpart_account_id"`
+	RefundSourceID       uint             `gorm:"not null;default:0;index" json:"refund_source_id"`
+	Kind                 string           `gorm:"size:16;not null;index" json:"kind"`
+	AmountCents          int64            `gorm:"not null" json:"amount_cents"`
+	Category             string           `gorm:"size:64;not null;index" json:"category"`
+	Note                 string           `gorm:"size:500" json:"note"`
+	OccurredAt           time.Time        `gorm:"not null;index:idx_personal_user_time" json:"occurred_at"`
+	CreatedAt            time.Time        `json:"created_at"`
+	UpdatedAt            time.Time        `json:"updated_at"`
+	LedgerName           string           `gorm:"-" json:"ledger_name"`
+	AccountName          string           `gorm:"-" json:"account_name"`
+	AccountType          string           `gorm:"-" json:"account_type"`
+	CounterpartName      string           `gorm:"-" json:"counterpart_account_name"`
+	RefundSourceCategory string           `gorm:"-" json:"refund_source_category"`
+	RefundSourceAmount   int64            `gorm:"-" json:"refund_source_amount_cents"`
+	RefundSourceDate     string           `gorm:"-" json:"refund_source_occurred_at"`
+	Tags                 []PersonalTag    `gorm:"many2many:personal_transaction_tags;joinForeignKey:TransactionID;joinReferences:TagID" json:"tags"`
+	Attachments          []BillAttachment `gorm:"-" json:"attachments"`
 }
 
 // PersonalAccount is a bookkeeping account reference. It intentionally stores

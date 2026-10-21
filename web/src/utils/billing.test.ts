@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { centsToMoney, isSplitValid, moneyToCents, pickDefaultAccountId, splitByWeights, splitEqually, splitExactly } from './billing'
+import { centsToMoney, isSplitValid, moneyToCents, pickDefaultAccountId, refundCategory, splitByWeights, splitEqually, splitExactly, transferCategory, validateRefundAmount, validateTransferAccounts } from './billing'
 
 describe('money conversion', () => {
   it('converts decimal money without floating point leakage', () => {
@@ -67,5 +67,49 @@ describe('default account selection', () => {
   it('falls back to the first account when nothing matches', () => {
     expect(pickDefaultAccountId(accounts, [99])).toBe(1)
     expect(pickDefaultAccountId([], [2])).toBe(0)
+  })
+})
+
+describe('transfer account validation', () => {
+  it('accepts two distinct accounts', () => {
+    expect(validateTransferAccounts(1, 2)).toBe('')
+  })
+
+  it('requires both accounts', () => {
+    expect(validateTransferAccounts(0, 2)).toBe('请选择转出账户')
+    expect(validateTransferAccounts(1, 0)).toBe('请选择转入账户')
+  })
+
+  it('rejects transferring to the same account', () => {
+    expect(validateTransferAccounts(3, 3)).toBe('转出账户与转入账户不能相同')
+  })
+
+  it('uses a fixed transfer category', () => {
+    expect(transferCategory).toBe('转账')
+  })
+})
+
+describe('refund category', () => {
+  it('uses a fixed refund category', () => {
+    expect(refundCategory).toBe('退款')
+  })
+})
+
+describe('refund amount validation', () => {
+  it('accepts a partial refund', () => {
+    expect(validateRefundAmount(3000, 10000)).toBe('')
+  })
+
+  it('accepts refunding the whole remaining amount', () => {
+    expect(validateRefundAmount(10000, 10000)).toBe('')
+  })
+
+  it('rejects an amount above the remaining refundable amount', () => {
+    expect(validateRefundAmount(10001, 10000)).toBe('退款金额不能超过剩余可退金额')
+  })
+
+  it('rejects a non positive amount', () => {
+    expect(validateRefundAmount(0, 10000)).toBe('请输入大于 0 的金额')
+    expect(validateRefundAmount(-100, 10000)).toBe('请输入大于 0 的金额')
   })
 })

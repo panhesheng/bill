@@ -18,15 +18,17 @@ import (
 )
 
 type personalRequest struct {
-	LedgerID    uint                   `json:"ledger_id"`
-	AccountID   uint                   `json:"account_id"`
-	TagIDs      []uint                 `json:"tag_ids"`
-	Kind        string                 `json:"kind"`
-	AmountCents int64                  `json:"amount_cents"`
-	Category    string                 `json:"category"`
-	Note        string                 `json:"note"`
-	OccurredAt  string                 `json:"occurred_at"`
-	Attachments *[]billAttachmentInput `json:"attachments"`
+	LedgerID             uint                   `json:"ledger_id"`
+	AccountID            uint                   `json:"account_id"`
+	CounterpartAccountID uint                   `json:"counterpart_account_id"`
+	RefundSourceID       uint                   `json:"refund_source_id"`
+	TagIDs               []uint                 `json:"tag_ids"`
+	Kind                 string                 `json:"kind"`
+	AmountCents          int64                  `json:"amount_cents"`
+	Category             string                 `json:"category"`
+	Note                 string                 `json:"note"`
+	OccurredAt           string                 `json:"occurred_at"`
+	Attachments          *[]billAttachmentInput `json:"attachments"`
 }
 
 type statsSummary struct {
@@ -54,12 +56,12 @@ func personalQuery(db *gorm.DB, userID uint, c *gin.Context) *gorm.DB {
 		query = query.Where("ledger_id = ?", value)
 	}
 	if value := utils.Atoi(c.Query("account_id"), 0); value > 0 {
-		query = query.Where("account_id = ?", value)
+		query = query.Where("(account_id = ? OR counterpart_account_id = ?)", value, value)
 	}
 	if value := utils.Atoi(c.Query("tag_id"), 0); value > 0 {
 		query = query.Where("EXISTS (SELECT 1 FROM personal_transaction_tags ptt WHERE ptt.transaction_id = personal_transactions.id AND ptt.tag_id = ?)", value)
 	}
-	if value := c.Query("kind"); validKind(value) {
+	if value := c.Query("kind"); validTransactionKind(value) {
 		query = query.Where("kind = ?", value)
 	}
 	if value := strings.TrimSpace(c.Query("category")); value != "" {
@@ -102,6 +104,13 @@ func loadPersonalRelations(db *gorm.DB, items []PersonalTransaction) error {
 				items[i].AccountType = account.Type
 			}
 		}
+		if items[i].CounterpartAccountID > 0 {
+			var account PersonalAccount
+			if err := db.Select("id, name, type").First(&account, items[i].CounterpartAccountID).Error; err == nil {
+				items[i].CounterpartName = account.Name
+			}
+		}
+		loadRefundSourceInfo(db, &items[i])
 		items[i].Attachments = attachments[items[i].ID]
 	}
 	return nil
@@ -135,29 +144,77 @@ func personalCategoryExists(db *gorm.DB, userID uint, kind, name string) (bool, 
 }
 
 func validatePersonalRequest(req personalRequest) (PersonalTransaction, error) {
-	if !validKind(req.Kind) || req.AmountCents <= 0 || req.AmountCents > 999999999999 {
+	if !validTransactionKind(req.Kind) || req.AmountCents <= 0 || req.AmountCents > 999999999999 {
 		return PersonalTransaction{}, errInvalid
 	}
 	if req.AccountID == 0 {
 		return PersonalTransaction{}, errors.New("请选择收支账户")
 	}
-	category := cleanText(req.Category, 64)
-	if category == "" {
-		return PersonalTransaction{}, errors.New("请选择分类")
-	}
 	occurredAt, err := parseOccurredAt(req.OccurredAt)
 	if err != nil {
 		return PersonalTransaction{}, errors.New("发生时间格式不正确")
 	}
-	return PersonalTransaction{
+	item := PersonalTransaction{
 		LedgerID:    req.LedgerID,
 		AccountID:   req.AccountID,
 		Kind:        req.Kind,
 		AmountCents: req.AmountCents,
-		Category:    category,
 		Note:        cleanText(req.Note, 500),
 		OccurredAt:  occurredAt,
-	}, nil
+	}
+	if req.Kind == KindTransfer {
+		if req.CounterpartAccountID == 0 {
+			return PersonalTransaction{}, errors.New("请选择转入账户")
+		}
+		if req.CounterpartAccountID == req.AccountID {
+			return PersonalTransaction{}, errors.New("转出账户与转入账户不能相同")
+		}
+		item.CounterpartAccountID = req.CounterpartAccountID
+		item.Category = TransferCategory
+		return item, nil
+	}
+	if req.Kind == KindRefund {
+		if req.RefundSourceID == 0 {
+			return PersonalTransaction{}, errors.New("请选择原支出的账单")
+		}
+		item.RefundSourceID = req.RefundSourceID
+		item.Category = RefundCategory
+		return item, nil
+	}
+	category := cleanText(req.Category, 64)
+	if category == "" {
+		return PersonalTransaction{}, errors.New("请选择分类")
+	}
+	item.Category = category
+	return item, nil
+}
+
+// validatePersonalCategory checks that a non-transfer transaction still points
+// at a category the user owns. Transfers carry a fixed category and are
+// skipped. The boolean result is false when the category must be rejected.
+func validatePersonalCategory(db *gorm.DB, userID uint, item PersonalTransaction, existing *PersonalTransaction) (bool, error) {
+	if item.Kind == KindTransfer || item.Kind == KindRefund {
+		return true, nil
+	}
+	categoryExists, err := personalCategoryExists(db, userID, item.Kind, item.Category)
+	if err != nil {
+		return false, err
+	}
+	if categoryExists {
+		return true, nil
+	}
+	if existing != nil && existing.Kind == item.Kind && existing.Category == item.Category {
+		return true, nil
+	}
+	return false, nil
+}
+
+// ownedCounterpartAccount validates the receiving account of a transfer.
+func ownedCounterpartAccount(db *gorm.DB, userID, accountID uint) (PersonalAccount, error) {
+	if accountID == 0 {
+		return PersonalAccount{}, errors.New("请选择转入账户")
+	}
+	return ownedPersonalAccount(db, userID, accountID, true)
 }
 
 func handleListPersonal(db *gorm.DB) gin.HandlerFunc {
@@ -217,12 +274,26 @@ func handleCreatePersonal(db *gorm.DB) gin.HandlerFunc {
 			respondPersonalError(c, err, "请选择有效的收支账户")
 			return
 		}
-		categoryExists, err := personalCategoryExists(db, item.UserID, item.Kind, item.Category)
+		var counterpart PersonalAccount
+		if item.Kind == KindTransfer {
+			counterpart, err = ownedCounterpartAccount(db, item.UserID, item.CounterpartAccountID)
+			if err != nil {
+				respondPersonalError(c, err, "请选择有效的转入账户")
+				return
+			}
+		}
+		if item.Kind == KindRefund {
+			if _, err := validateRefundAmount(db, item.UserID, item.RefundSourceID, item.AmountCents, 0); err != nil {
+				response.ErrorBadRequest(c, err.Error())
+				return
+			}
+		}
+		categoryValid, err := validatePersonalCategory(db, item.UserID, item, nil)
 		if err != nil {
 			response.ErrorInternal(c, "校验分类失败")
 			return
 		}
-		if !categoryExists {
+		if !categoryValid {
 			response.ErrorBadRequest(c, "请选择有效的分类")
 			return
 		}
@@ -256,6 +327,12 @@ func handleCreatePersonal(db *gorm.DB) gin.HandlerFunc {
 		item.LedgerName = ledger.Name
 		item.AccountName = account.Name
 		item.AccountType = account.Type
+		if item.Kind == KindTransfer {
+			item.CounterpartName = counterpart.Name
+		}
+		if item.Kind == KindRefund {
+			loadRefundSourceInfo(db, &item)
+		}
 		audit.Log(db, c, "personal_transaction_create", "personal_transaction", item.ID, "新增个人账单")
 		response.Success(c, item)
 	}
@@ -301,12 +378,32 @@ func handleUpdatePersonal(db *gorm.DB) gin.HandlerFunc {
 			respondPersonalError(c, err, "请选择有效的收支账户")
 			return
 		}
-		categoryExists, err := personalCategoryExists(db, c.GetUint("userID"), item.Kind, item.Category)
+		var counterpart PersonalAccount
+		if item.Kind == KindTransfer {
+			counterpart, err = ownedCounterpartAccount(db, c.GetUint("userID"), item.CounterpartAccountID)
+			if err != nil {
+				respondPersonalError(c, err, "请选择有效的转入账户")
+				return
+			}
+		}
+		if item.Kind == KindRefund {
+			// The bill a refund points at is bound once the refund exists: editing
+			// the amount, the account or the date must not move the refund to
+			// another expense.
+			if existing.Kind == KindRefund && existing.RefundSourceID > 0 {
+				item.RefundSourceID = existing.RefundSourceID
+			}
+			if _, err := validateRefundAmount(db, c.GetUint("userID"), item.RefundSourceID, item.AmountCents, existing.ID); err != nil {
+				response.ErrorBadRequest(c, err.Error())
+				return
+			}
+		}
+		categoryValid, err := validatePersonalCategory(db, c.GetUint("userID"), item, &existing)
 		if err != nil {
 			response.ErrorInternal(c, "校验分类失败")
 			return
 		}
-		if !categoryExists && (item.Kind != existing.Kind || item.Category != existing.Category) {
+		if !categoryValid {
 			response.ErrorBadRequest(c, "请选择有效的分类")
 			return
 		}
@@ -325,9 +422,11 @@ func handleUpdatePersonal(db *gorm.DB) gin.HandlerFunc {
 		}
 		if err := db.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Model(&existing).Updates(map[string]interface{}{
-				"ledger_id":  item.LedgerID,
-				"account_id": item.AccountID,
-				"kind":       item.Kind, "amount_cents": item.AmountCents, "category": item.Category,
+				"ledger_id":              item.LedgerID,
+				"account_id":             item.AccountID,
+				"counterpart_account_id": item.CounterpartAccountID,
+				"refund_source_id":       item.RefundSourceID,
+				"kind":                   item.Kind, "amount_cents": item.AmountCents, "category": item.Category,
 				"note": item.Note, "occurred_at": item.OccurredAt,
 			}).Error; err != nil {
 				return err
@@ -348,6 +447,12 @@ func handleUpdatePersonal(db *gorm.DB) gin.HandlerFunc {
 		existing.LedgerName = ledger.Name
 		existing.AccountName = account.Name
 		existing.AccountType = account.Type
+		if item.Kind == KindTransfer {
+			existing.CounterpartName = counterpart.Name
+		}
+		if item.Kind == KindRefund {
+			loadRefundSourceInfo(db, &existing)
+		}
 		attachmentMap, err := loadBillAttachments(db, attachmentTypePersonal, []uint{existing.ID})
 		if err != nil {
 			response.ErrorInternal(c, "更新账单失败")
@@ -410,10 +515,11 @@ func personalStatsForLedger(db *gorm.DB, userID uint, start, end string, ledgerI
 	var summary statsSummary
 	for _, row := range rows {
 		summary.Count += row.Count
-		if row.Kind == KindIncome {
-			summary.IncomeCents = row.Total
-		} else {
-			summary.ExpenseCents = row.Total
+		switch row.Kind {
+		case KindIncome:
+			summary.IncomeCents += row.Total
+		case KindExpense:
+			summary.ExpenseCents += row.Total
 		}
 	}
 	summary.BalanceCents = summary.IncomeCents - summary.ExpenseCents
@@ -451,10 +557,11 @@ func personalStatsForLedger(db *gorm.DB, userID uint, start, end string, ledgerI
 		if item == nil {
 			continue
 		}
-		if row.Kind == KindIncome {
-			item.IncomeCents = row.Total
-		} else {
-			item.ExpenseCents = row.Total
+		switch row.Kind {
+		case KindIncome:
+			item.IncomeCents += row.Total
+		case KindExpense:
+			item.ExpenseCents += row.Total
 		}
 	}
 	trend := make([]monthlyStat, 0, 6)
@@ -539,10 +646,11 @@ func personalDimensions(db *gorm.DB, userID uint, start, end string, ledgerID ui
 				order = append(order, row.ID)
 			}
 			item.Count += row.Count
-			if row.Kind == KindIncome {
-				item.IncomeCents = row.Total
-			} else {
-				item.ExpenseCents = row.Total
+			switch row.Kind {
+			case KindIncome:
+				item.IncomeCents += row.Total
+			case KindExpense:
+				item.ExpenseCents += row.Total
 			}
 		}
 		result := make([]dimensionStat, 0, len(order))
@@ -570,10 +678,11 @@ func personalDimensions(db *gorm.DB, userID uint, start, end string, ledgerID ui
 			dates = append(dates, row.Date)
 		}
 		item.Count += row.Count
-		if row.Kind == KindIncome {
-			item.IncomeCents = row.Total
-		} else {
-			item.ExpenseCents = row.Total
+		switch row.Kind {
+		case KindIncome:
+			item.IncomeCents += row.Total
+		case KindExpense:
+			item.ExpenseCents += row.Total
 		}
 	}
 	daily := make([]dailyStat, 0, len(dates))
@@ -594,9 +703,10 @@ func personalDimensions(db *gorm.DB, userID uint, start, end string, ledgerID ui
 		weekdays[i].Weekday = i
 	}
 	for _, row := range weekdayRows {
-		if row.Kind == KindIncome {
-			weekdays[row.Weekday].IncomeCents = row.Total
-		} else {
+		switch row.Kind {
+		case KindIncome:
+			weekdays[row.Weekday].IncomeCents += row.Total
+		case KindExpense:
 			weekdays[row.Weekday].ExpenseCents = row.Total
 			weekdays[row.Weekday].AmountCents = row.Total
 			weekdays[row.Weekday].Count = row.Count
@@ -654,20 +764,30 @@ func handleExportPersonal(db *gorm.DB) gin.HandlerFunc {
 		_, _ = c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
 		writer := csv.NewWriter(c.Writer)
 		defer writer.Flush()
-		_ = writer.Write([]string{"日期", "账本", "收支账户", "类型", "分类", "标签", "金额", "备注"})
+		_ = writer.Write([]string{"日期", "账本", "收支账户", "对方账户", "类型", "分类", "标签", "金额", "备注"})
 		for _, item := range items {
 			kind := "支出"
-			if item.Kind == KindIncome {
+			switch item.Kind {
+			case KindIncome:
 				kind = "收入"
+			case KindTransfer:
+				kind = "转账"
+			case KindRefund:
+				kind = "退款"
 			}
 			tagNames := make([]string, 0, len(item.Tags))
 			for _, tag := range item.Tags {
 				tagNames = append(tagNames, tag.Name)
 			}
+			related := item.CounterpartName
+			if item.Kind == KindRefund && item.RefundSourceCategory != "" {
+				related = "退款自：" + item.RefundSourceCategory
+			}
 			_ = writer.Write([]string{
 				item.OccurredAt.Format("2006-01-02 15:04"),
 				item.LedgerName,
 				item.AccountName,
+				related,
 				kind,
 				item.Category,
 				strings.Join(tagNames, "、"),

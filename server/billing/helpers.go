@@ -58,6 +58,13 @@ func validKind(kind string) bool {
 	return kind == KindExpense || kind == KindIncome
 }
 
+// validTransactionKind accepts every kind a personal transaction may use.
+// Categories keep using validKind because transfers and refunds own a fixed
+// category.
+func validTransactionKind(kind string) bool {
+	return validKind(kind) || kind == KindTransfer || kind == KindRefund
+}
+
 func cleanText(value string, max int) string {
 	value = strings.TrimSpace(value)
 	if len([]rune(value)) > max {

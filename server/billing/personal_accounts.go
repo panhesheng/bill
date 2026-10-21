@@ -272,7 +272,7 @@ func handleListPersonalAccounts(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		for i := range items {
-			if err := db.Model(&PersonalTransaction{}).Where("user_id = ? AND account_id = ?", c.GetUint("userID"), items[i].ID).Count(&items[i].TransactionCount).Error; err != nil {
+			if err := db.Model(&PersonalTransaction{}).Where("user_id = ? AND (account_id = ? OR counterpart_account_id = ?)", c.GetUint("userID"), items[i].ID, items[i].ID).Count(&items[i].TransactionCount).Error; err != nil {
 				response.ErrorInternal(c, "获取账户失败")
 				return
 			}

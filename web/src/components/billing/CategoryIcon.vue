@@ -13,9 +13,9 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { BillKind } from '../../api/billing'
+import type { PersonalBillKind } from '../../api/billing'
 
-const props = defineProps<{ category: string; kind: BillKind }>()
+const props = defineProps<{ category: string; kind: PersonalBillKind }>()
 
 const iconGroups: Array<[string[], string[]]> = [
   [['餐饮', '聚餐'], ['M7 3v8m3-8v8M5 7h7m-3 4v10M17 3v18m0-18c2.2 2.1 2.4 6.1 0 8h3']],
@@ -25,6 +25,8 @@ const iconGroups: Array<[string[], string[]]> = [
   [['娱乐', '门票', '活动'], ['M4 7h16v10H4V7Zm4 3h.01M12 10h4m-8 4h8']],
   [['医疗'], ['M9 3h6v6h6v6h-6v6H9v-6H3V9h6V3Z']],
   [['教育'], ['m3 9 9-5 9 5-9 5-9-5Zm4 3v5c3 2 7 2 10 0v-5']],
+  [['转账'], ['M4 8h14m0 0-4-4m4 4-4 4M20 16H6m0 0 4-4m-4 4 4 4']],
+  [['退款'], ['M9 14 4 9l5-5M4 9h9a7 7 0 0 1 0 14H8']],
 ]
 
 const moneyPaths = ['M12 2v20m5-16H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6']

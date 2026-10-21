@@ -1,6 +1,10 @@
 import request from './request'
 
 export type BillKind = 'expense' | 'income'
+// PersonalBillKind adds transfer (money moved between two accounts of the same
+// user) and refund (money returned for a previous expense). Neither is part of
+// the income/expense category tree.
+export type PersonalBillKind = BillKind | 'transfer' | 'refund'
 export type PersonalAccountType = 'bank_card' | 'wechat' | 'alipay'
 export type BankCardKind = 'debit' | 'credit'
 
@@ -20,7 +24,13 @@ export interface PersonalTransaction {
   account_id: number
   account_name?: string
   account_type?: PersonalAccountType
-  kind: BillKind
+  counterpart_account_id?: number
+  counterpart_account_name?: string
+  refund_source_id?: number
+  refund_source_category?: string
+  refund_source_amount_cents?: number
+  refund_source_occurred_at?: string
+  kind: PersonalBillKind
   amount_cents: number
   category: string
   note: string
@@ -29,6 +39,19 @@ export interface PersonalTransaction {
   updated_at: string
   tags: PersonalTag[]
   attachments?: BillAttachment[]
+}
+
+// RefundableTransaction is an expense that still has money left to refund.
+export interface RefundableTransaction {
+  id: number
+  category: string
+  note: string
+  amount_cents: number
+  occurred_at: string
+  account_id: number
+  account_name: string
+  refunded_cents: number
+  refundable_cents: number
 }
 
 export interface PersonalAccount {
@@ -218,7 +241,9 @@ export interface LedgerDetail {
 export interface PersonalPayload {
   ledger_id: number
   account_id: number
-  kind: BillKind
+  counterpart_account_id?: number
+  refund_source_id?: number
+  kind: PersonalBillKind
   amount_cents: number
   category: string
   note: string
@@ -227,7 +252,12 @@ export interface PersonalPayload {
   attachments?: BillAttachment[]
 }
 
-export interface SharedPayload extends Pick<PersonalPayload, 'kind' | 'amount_cents' | 'category' | 'note' | 'occurred_at'> {
+export interface SharedPayload {
+  kind: BillKind
+  amount_cents: number
+  category: string
+  note: string
+  occurred_at: string
   actor_user_id: number
   account_id?: number
   shares: SharedShare[]
@@ -242,6 +272,7 @@ export const billingApi = {
   personalCreate: (data: PersonalPayload) => request.post('/api/billing/personal/transactions', data),
   personalUpdate: (id: number, data: PersonalPayload) => request.put(`/api/billing/personal/transactions/${id}`, data),
   personalDelete: (id: number) => request.delete(`/api/billing/personal/transactions/${id}`),
+  personalRefundableTransactions: (params: { ledger_id?: number; keyword?: string; limit?: number } = {}) => request.get('/api/billing/personal/refundable-transactions', { params }),
   personalStats: (params: Record<string, unknown> = {}) => request.get('/api/billing/personal/stats', { params }),
   personalExport: (params: Record<string, unknown> = {}) => request.get('/api/billing/personal/export', { params, responseType: 'blob' }),
   personalAccounts: (includeArchived = false) => request.get('/api/billing/personal/accounts', { params: includeArchived ? { include_archived: true } : {} }),

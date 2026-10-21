@@ -120,3 +120,30 @@ export function pickDefaultAccountId(accounts: Array<{ id: number }>, candidates
   }
   return accounts[0]?.id || 0
 }
+
+/** 转账固定使用的分类，不参与用户的收支分类树。 */
+export const transferCategory = '转账'
+
+/** 退款固定使用的分类，不参与用户的收支分类树。 */
+export const refundCategory = '退款'
+
+/**
+ * 校验转账的转出与转入账户。
+ * 返回空字符串表示校验通过，否则返回错误提示。
+ */
+export function validateTransferAccounts(fromAccountId: number, toAccountId: number): string {
+  if (!fromAccountId) return '请选择转出账户'
+  if (!toAccountId) return '请选择转入账户'
+  if (fromAccountId === toAccountId) return '转出账户与转入账户不能相同'
+  return ''
+}
+
+/**
+ * 校验退款金额。退款可以退全部或退部分，但不能超过原支出的剩余可退金额。
+ * 返回空字符串表示校验通过，否则返回错误提示。
+ */
+export function validateRefundAmount(amountCents: number, refundableCents: number): string {
+  if (amountCents <= 0) return '请输入大于 0 的金额'
+  if (refundableCents > 0 && amountCents > refundableCents) return '退款金额不能超过剩余可退金额'
+  return ''
+}

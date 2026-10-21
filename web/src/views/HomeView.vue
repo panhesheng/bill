@@ -136,15 +136,15 @@
           </div>
           <div v-else class="mt-4 divide-y divide-border">
             <div v-for="item in recent.slice(0, 5)" :key="item.id" class="flex items-center gap-3 py-3">
-              <div :class="item.kind === 'income' ? 'bg-brand-100 text-brand-700 dark:bg-brand-700/40 dark:text-brand-300' : 'bg-[#f8ded8] text-[#a83b36] dark:bg-[#7d322f]/35 dark:text-[#ff9a90]'" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full">
+              <div :class="recentIconClass(item)" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full">
                 <CategoryIcon :category="item.category" :kind="item.kind" class="h-4 w-4" />
               </div>
               <div class="min-w-0 flex-1">
-                <div class="truncate text-sm font-bold">{{ item.category }}<span v-if="item.note" class="font-normal text-muted-foreground"> · {{ item.note }}</span></div>
+                <div class="truncate text-sm font-bold">{{ recentTitle(item) }}<span v-if="item.note" class="font-normal text-muted-foreground"> · {{ item.note }}</span></div>
                 <div class="font-mono text-[10px] text-muted-foreground">{{ formatDate(item.occurred_at) }}</div>
               </div>
-              <div :class="item.kind === 'income' ? 'text-brand-700 dark:text-brand-300' : 'text-foreground'" class="font-mono text-xs font-semibold tabular-nums sm:text-sm">
-                {{ item.kind === 'income' ? '+' : '-' }}{{ formatMoney(item.amount_cents) }}
+              <div :class="recentAmountClass(item)" class="font-mono text-xs font-semibold tabular-nums sm:text-sm">
+                {{ recentAmountPrefix(item) }}{{ formatMoney(item.amount_cents) }}
               </div>
             </div>
           </div>
@@ -297,6 +297,30 @@ function notify(message: string, type: 'success' | 'error' = 'success') {
 function handleQuickEntrySaved() {
   notify('账单已记录')
   loadDashboard()
+}
+
+function recentIconClass(item: PersonalTransaction) {
+  if (item.kind === 'transfer') return 'bg-sky-500/10 text-sky-700 dark:text-sky-300'
+  if (item.kind === 'refund') return 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+  return item.kind === 'income' ? 'bg-brand-100 text-brand-700 dark:bg-brand-700/40 dark:text-brand-300' : 'bg-[#f8ded8] text-[#a83b36] dark:bg-[#7d322f]/35 dark:text-[#ff9a90]'
+}
+function recentAmountClass(item: PersonalTransaction) {
+  if (item.kind === 'transfer') return 'text-sky-700 dark:text-sky-300'
+  if (item.kind === 'refund') return 'text-amber-700 dark:text-amber-300'
+  return item.kind === 'income' ? 'text-brand-700 dark:text-brand-300' : 'text-foreground'
+}
+function recentAmountPrefix(item: PersonalTransaction) {
+  if (item.kind === 'transfer' || item.kind === 'refund') return ''
+  return item.kind === 'income' ? '+' : '-'
+}
+function recentTitle(item: PersonalTransaction) {
+  if (item.kind === 'transfer') {
+    const from = item.account_name || '未设置账户'
+    const to = item.counterpart_account_name || '未设置账户'
+    return `${from} → ${to}`
+  }
+  if (item.kind === 'refund') return item.refund_source_category ? `退款 · ${item.refund_source_category}` : item.category
+  return item.category
 }
 
 onMounted(loadDashboard)
