@@ -64,8 +64,13 @@ export interface PersonalAccount {
   card_kind?: BankCardKind
   archived: boolean
   transaction_count?: number
+  // opening_balance_cents is the balance the account started with. It can only
+  // be set when the account is created.
+  opening_balance_cents?: number
   // balance_cents is the money currently held by the account.
   balance_cents?: number
+  // can_delete tells whether the account may be deleted for good.
+  can_delete?: boolean
   created_at?: string
   updated_at?: string
 }
@@ -77,6 +82,8 @@ export interface PersonalAccountPayload {
   identifier: string
   card_kind?: BankCardKind
   card_number?: string
+  // opening_balance_cents is only used when creating an account.
+  opening_balance_cents?: number
 }
 
 export interface PersonalAccountOptions {
@@ -282,6 +289,7 @@ export const billingApi = {
   personalAccountCreate: (data: PersonalAccountPayload) => request.post('/api/billing/personal/accounts', data),
   personalAccountUpdate: (id: number, data: PersonalAccountPayload) => request.put(`/api/billing/personal/accounts/${id}`, data),
   personalAccountArchive: (id: number) => request.delete(`/api/billing/personal/accounts/${id}`),
+  personalAccountDelete: (id: number) => request.delete(`/api/billing/personal/accounts/${id}/permanent`),
   personalAccountRestore: (id: number) => request.post(`/api/billing/personal/accounts/${id}/restore`),
   personalLedgers: (includeArchived = false) => request.get('/api/billing/personal/ledgers', { params: includeArchived ? { include_archived: true } : {} }),
   personalLedgerCreate: (data: { name: string; currency: string; cover?: string }) => request.post('/api/billing/personal/ledgers', data),

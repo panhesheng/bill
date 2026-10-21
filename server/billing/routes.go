@@ -89,6 +89,7 @@ func setupRoutes(api *gin.RouterGroup, db *gorm.DB) {
 	group.POST("/personal/accounts", handleCreatePersonalAccount(db))
 	group.PUT("/personal/accounts/:id", handleUpdatePersonalAccount(db))
 	group.DELETE("/personal/accounts/:id", handleArchivePersonalAccount(db))
+	group.DELETE("/personal/accounts/:id/permanent", handleDeletePersonalAccount(db))
 	group.POST("/personal/accounts/:id/restore", handleRestorePersonalAccount(db))
 	group.GET("/personal/ledgers", handleListPersonalLedgers(db))
 	group.POST("/personal/ledgers", handleCreatePersonalLedger(db))

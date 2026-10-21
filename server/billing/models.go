@@ -81,12 +81,18 @@ type PersonalAccount struct {
 	CardFingerprint  *string `gorm:"size:64;uniqueIndex:idx_personal_account_user_card" json:"-"`
 	Archived         bool    `gorm:"not null;default:false;index" json:"archived"`
 	TransactionCount int64   `gorm:"-" json:"transaction_count"`
-	// BalanceCents is the money currently held by the account: income and
-	// refunds add to it, expenses and outgoing transfers take from it and
-	// incoming transfers add to it.
-	BalanceCents int64     `gorm:"-" json:"balance_cents"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	// OpeningBalanceCents is the balance the account started with. It is set
+	// when the account is created and never changed afterwards, so the balance
+	// always stays explainable by its opening balance and its bills.
+	OpeningBalanceCents int64 `gorm:"not null;default:0" json:"opening_balance_cents"`
+	// BalanceCents is the money currently held by the account: the opening
+	// balance plus income and refunds, minus expenses and outgoing transfers.
+	BalanceCents int64 `gorm:"-" json:"balance_cents"`
+	// CanDelete tells whether the account may be deleted for good. Accounts
+	// referenced by a bill have to be archived instead.
+	CanDelete bool      `gorm:"-" json:"can_delete"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // PersonalLedger is private to one user. It is deliberately separate from

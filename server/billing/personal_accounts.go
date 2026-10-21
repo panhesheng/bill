@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -129,7 +130,12 @@ type personalAccountRequest struct {
 	Identifier  string `json:"identifier"`
 	CardKind    string `json:"card_kind"`
 	CardNumber  string `json:"card_number"`
+	// OpeningBalanceCents is only honoured when the account is created.
+	OpeningBalanceCents int64 `json:"opening_balance_cents"`
 }
+
+// maxOpeningBalanceCents caps the opening balance of an account.
+const maxOpeningBalanceCents = 999999999999
 
 func normalizePersonalAccount(req personalAccountRequest) (PersonalAccount, error) {
 	account := PersonalAccount{
@@ -311,12 +317,24 @@ func handleListPersonalAccounts(db *gorm.DB) gin.HandlerFunc {
 			response.ErrorInternal(c, "获取账户失败")
 			return
 		}
+		// Accounts used by a shared bill are referenced as well and cannot be
+		// deleted either.
+		var sharedAccountIDs []uint
+		if err := db.Model(&SharedTransaction{}).Where("actor_user_id = ? AND account_id > 0", userID).Distinct().Pluck("account_id", &sharedAccountIDs).Error; err != nil {
+			response.ErrorInternal(c, "获取账户失败")
+			return
+		}
+		sharedAccounts := make(map[uint]bool, len(sharedAccountIDs))
+		for _, accountID := range sharedAccountIDs {
+			sharedAccounts[accountID] = true
+		}
 		for i := range items {
 			if err := db.Model(&PersonalTransaction{}).Where("user_id = ? AND (account_id = ? OR counterpart_account_id = ?)", userID, items[i].ID, items[i].ID).Count(&items[i].TransactionCount).Error; err != nil {
 				response.ErrorInternal(c, "获取账户失败")
 				return
 			}
-			items[i].BalanceCents = balances[items[i].ID]
+			items[i].BalanceCents = items[i].OpeningBalanceCents + balances[items[i].ID]
+			items[i].CanDelete = items[i].TransactionCount == 0 && !sharedAccounts[items[i].ID]
 		}
 		response.Success(c, items)
 	}
@@ -335,6 +353,11 @@ func handleCreatePersonalAccount(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		account.UserID = c.GetUint("userID")
+		if req.OpeningBalanceCents > maxOpeningBalanceCents || req.OpeningBalanceCents < -maxOpeningBalanceCents {
+			response.ErrorBadRequest(c, "初始余额超出允许范围")
+			return
+		}
+		account.OpeningBalanceCents = req.OpeningBalanceCents
 		if account.Type == AccountTypeBankCard {
 			if strings.TrimSpace(req.CardNumber) != "" {
 				if err := prepareBankCard(db, &account, req.CardNumber); err != nil {
@@ -361,6 +384,12 @@ func handleCreatePersonalAccount(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		audit.Log(db, c, "personal_account_create", "personal_account", account.ID, "新增记账账户")
+		balances, err := personalAccountBalances(db, account.UserID)
+		if err != nil {
+			response.ErrorInternal(c, "创建账户失败")
+			return
+		}
+		account.BalanceCents = account.OpeningBalanceCents + balances[account.ID]
 		response.Success(c, account)
 	}
 }
@@ -409,6 +438,8 @@ func handleUpdatePersonalAccount(db *gorm.DB) gin.HandlerFunc {
 		} else {
 			account.CardFingerprint = nil
 		}
+		// The opening balance is deliberately not part of the update: it can
+		// only be set when the account is created.
 		updates := map[string]interface{}{"type": account.Type, "name": account.Name, "institution": account.Institution, "identifier": account.Identifier, "card_kind": account.CardKind, "card_fingerprint": account.CardFingerprint}
 		if err := db.Model(&existing).Updates(updates).Error; err != nil {
 			if message := personalAccountConflictMessage(err); message != "" {
@@ -419,6 +450,12 @@ func handleUpdatePersonalAccount(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		db.First(&existing, existing.ID)
+		balances, err := personalAccountBalances(db, existing.UserID)
+		if err != nil {
+			response.ErrorInternal(c, "更新账户失败")
+			return
+		}
+		existing.BalanceCents = existing.OpeningBalanceCents + balances[existing.ID]
 		response.Success(c, existing)
 	}
 }
@@ -460,6 +497,49 @@ func handleRestorePersonalAccount(db *gorm.DB) gin.HandlerFunc {
 			response.ErrorInternal(c, "恢复账户失败")
 			return
 		}
+		response.Success(c, nil)
+	}
+}
+
+// handleDeletePersonalAccount removes an account for good. Accounts that are
+// referenced by bills cannot be deleted, because the bills would lose the
+// account they belong to.
+func handleDeletePersonalAccount(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+		if err != nil {
+			response.ErrorBadRequest(c, "无效的账户 ID")
+			return
+		}
+		userID := c.GetUint("userID")
+		account, err := ownedPersonalAccount(db, userID, uint(id), false)
+		if err != nil {
+			response.Error(c, http.StatusNotFound, response.CodeNotFound, "账户不存在")
+			return
+		}
+		var count int64
+		if err := db.Model(&PersonalTransaction{}).Where("user_id = ? AND (account_id = ? OR counterpart_account_id = ?)", userID, account.ID, account.ID).Count(&count).Error; err != nil {
+			response.ErrorInternal(c, "删除账户失败")
+			return
+		}
+		if count > 0 {
+			response.ErrorBadRequest(c, fmt.Sprintf("该账户已关联 %d 笔账单，无法删除。可以选择归档账户。", count))
+			return
+		}
+		var sharedCount int64
+		if err := db.Model(&SharedTransaction{}).Where("actor_user_id = ? AND account_id = ?", userID, account.ID).Count(&sharedCount).Error; err != nil {
+			response.ErrorInternal(c, "删除账户失败")
+			return
+		}
+		if sharedCount > 0 {
+			response.ErrorBadRequest(c, fmt.Sprintf("该账户已关联 %d 笔共同账单，无法删除。可以选择归档账户。", sharedCount))
+			return
+		}
+		if err := db.Delete(&account).Error; err != nil {
+			response.ErrorInternal(c, "删除账户失败")
+			return
+		}
+		audit.Log(db, c, "personal_account_delete", "personal_account", account.ID, "删除记账账户")
 		response.Success(c, nil)
 	}
 }
