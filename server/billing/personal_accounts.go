@@ -260,6 +260,40 @@ func ownedPersonalAccount(db *gorm.DB, userID, accountID uint, writable bool) (P
 	return account, nil
 }
 
+// personalAccountBalances sums the money held by every account of the user.
+// Income and refunds add to the account they are booked on, expenses and
+// outgoing transfers take from it, and incoming transfers add to the
+// counterpart account. The balance is the money currently held, which is a
+// different figure from the income/expense statistics.
+func personalAccountBalances(db *gorm.DB, userID uint) (map[uint]int64, error) {
+	sql := `SELECT account_id, SUM(delta) AS balance FROM (
+			SELECT account_id AS account_id,
+				CASE WHEN kind = ? OR kind = ? THEN -amount_cents ELSE amount_cents END AS delta
+			FROM personal_transactions
+			WHERE user_id = ? AND account_id > 0 AND kind IN (?, ?, ?, ?)
+			UNION ALL
+			SELECT counterpart_account_id AS account_id, amount_cents AS delta
+			FROM personal_transactions
+			WHERE user_id = ? AND kind = ? AND counterpart_account_id > 0
+		) t GROUP BY account_id`
+	balances := map[uint]int64{}
+	var rows []struct {
+		AccountID uint  `gorm:"column:account_id"`
+		Balance   int64 `gorm:"column:balance"`
+	}
+	err := db.Raw(sql,
+		KindExpense, KindTransfer, userID, KindIncome, KindExpense, KindRefund, KindTransfer,
+		userID, KindTransfer,
+	).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		balances[row.AccountID] = row.Balance
+	}
+	return balances, nil
+}
+
 func handleListPersonalAccounts(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		query := db.Where("user_id = ?", c.GetUint("userID"))
@@ -271,11 +305,18 @@ func handleListPersonalAccounts(db *gorm.DB) gin.HandlerFunc {
 			response.ErrorInternal(c, "获取账户失败")
 			return
 		}
+		userID := c.GetUint("userID")
+		balances, err := personalAccountBalances(db, userID)
+		if err != nil {
+			response.ErrorInternal(c, "获取账户失败")
+			return
+		}
 		for i := range items {
-			if err := db.Model(&PersonalTransaction{}).Where("user_id = ? AND (account_id = ? OR counterpart_account_id = ?)", c.GetUint("userID"), items[i].ID, items[i].ID).Count(&items[i].TransactionCount).Error; err != nil {
+			if err := db.Model(&PersonalTransaction{}).Where("user_id = ? AND (account_id = ? OR counterpart_account_id = ?)", userID, items[i].ID, items[i].ID).Count(&items[i].TransactionCount).Error; err != nil {
 				response.ErrorInternal(c, "获取账户失败")
 				return
 			}
+			items[i].BalanceCents = balances[items[i].ID]
 		}
 		response.Success(c, items)
 	}

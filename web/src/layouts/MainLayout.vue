@@ -67,13 +67,13 @@
 
       <main id="main-content" ref="mainRef" tabindex="-1" class="min-w-0 w-full overflow-x-clip p-3 pb-28 outline-none lg:p-10 lg:pb-10">
         <!-- 赞赏横幅：管理员可见，每个版本只出现一次；文档流内展示，不遮挡页面内容 -->
-        <div v-if="showDonateBanner" class="mb-4 flex items-center justify-between gap-3 rounded-xl bg-gradient-to-r from-brand-600 to-brand-800 px-4 py-2.5 text-sm text-white shadow-md">
-          <span>☕ 账单应用免费、无广告、数据都在你自己的设备上。如果它帮到了你，欢迎请站长喝杯咖啡——1 元也是心意，完全自愿，不影响任何功能。</span>
-          <span class="flex shrink-0 items-center gap-2">
-            <button class="underline underline-offset-2 hover:opacity-80" @click="showSupportModal = true">去赞赏</button>
-            <button class="hover:opacity-80" title="关闭" aria-label="关闭赞赏横幅" @click="dismissDonateBanner"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
-          </span>
-        </div>
+<!--        <div v-if="showDonateBanner" class="mb-4 flex items-center justify-between gap-3 rounded-xl bg-gradient-to-r from-brand-600 to-brand-800 px-4 py-2.5 text-sm text-white shadow-md">-->
+<!--          <span>☕ 账单应用免费、无广告、数据都在你自己的设备上。如果它帮到了你，欢迎请站长喝杯咖啡——1 元也是心意，完全自愿，不影响任何功能。</span>-->
+<!--          <span class="flex shrink-0 items-center gap-2">-->
+<!--            <button class="underline underline-offset-2 hover:opacity-80" @click="showSupportModal = true">去赞赏</button>-->
+<!--            <button class="hover:opacity-80" title="关闭" aria-label="关闭赞赏横幅" @click="dismissDonateBanner"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>-->
+<!--          </span>-->
+<!--        </div>-->
         <RouterView v-slot="{ Component }"><Transition mode="out-in" enter-active-class="transition duration-200 ease-out" enter-from-class="translate-y-1 opacity-0" leave-active-class="transition duration-100" leave-to-class="opacity-0"><component :is="Component" /></Transition></RouterView>
       </main>
     </div>

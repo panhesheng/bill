@@ -3,14 +3,19 @@
     <PageHeader title="账户管理" description="管理记账使用的银行卡、微信和支付宝账户。银行卡号可以稍后补充，填写后也不会保存完整号码。">
       <template #actions><button class="btn-brand min-h-11 w-full sm:w-auto" @click="openCreate">添加账户</button></template>
     </PageHeader>
-    <section class="grid grid-cols-3 gap-2 sm:gap-3"><article v-for="summary in summaries" :key="summary.type" class="surface min-w-0 rounded-2xl p-3 sm:p-4"><p class="truncate text-xs text-muted-foreground sm:text-sm">{{ summary.label }}</p><strong class="mt-2 block font-display text-xl sm:text-2xl">{{ summary.count }}</strong></article></section>
+    <section class="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3"><article class="surface min-w-0 rounded-2xl p-3 sm:p-4"><p class="truncate text-xs text-muted-foreground sm:text-sm">账户总余额</p><strong :class="totalBalance >= 0 ? 'text-foreground' : 'text-rose-600'" class="mt-2 block font-display text-xl sm:text-2xl tabular-nums">{{ formatMoney(totalBalance) }}</strong></article><article v-for="summary in summaries" :key="summary.type" class="surface min-w-0 rounded-2xl p-3 sm:p-4"><p class="truncate text-xs text-muted-foreground sm:text-sm">{{ summary.label }}</p><strong class="mt-2 block font-display text-xl sm:text-2xl">{{ summary.count }}</strong></article></section>
+    <p class="text-xs leading-5 text-muted-foreground">余额 = 收入 + 退款 + 转入 − 支出 − 转出，表示该账户当前持有的金额，与「收入/支出」统计口径不同。</p>
     <div class="flex flex-wrap items-center justify-between gap-2"><h2 class="font-display text-lg font-bold">我的收支账户</h2><label class="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm text-muted-foreground"><input v-model="showArchived" type="checkbox" class="h-4 w-4 accent-brand-700" />显示已归档</label></div>
     <section v-if="loading" class="grid gap-4 md:grid-cols-2 xl:grid-cols-3"><div v-for="n in 6" :key="n" class="surface h-40 animate-pulse rounded-2xl"></div></section>
     <section v-else-if="!visibleAccounts.length" class="surface empty-state min-h-64 rounded-2xl"><p>还没有账户</p><button class="btn-brand mt-4 min-h-11" @click="openCreate">添加第一个账户</button></section>
     <section v-else class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       <article v-for="account in visibleAccounts" :key="account.id" :class="account.archived ? 'opacity-65' : ''" class="surface rounded-2xl p-4 sm:p-5">
         <div class="flex items-start gap-3 sm:gap-4"><span v-if="account.type !== 'bank_card'" :class="typeStyle(account.type)" class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl" v-html="typeIcon(account.type)"></span><BankLogo v-else :bank="bankByName(account.institution)" class="m-1"/><div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-2"><h3 class="truncate font-display text-lg font-bold">{{ account.name }}</h3><span v-if="account.archived" class="badge bg-muted text-muted-foreground">已归档</span></div><p class="mt-1 break-words text-sm text-muted-foreground">{{ accountDetail(account) }}</p></div></div>
-        <div class="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 sm:mt-5 sm:pt-4"><span class="text-xs text-muted-foreground">已关联 {{ account.transaction_count || 0 }} 笔账单</span><div class="flex gap-2"><button v-if="!account.archived" class="min-h-11 px-2 text-sm font-semibold text-brand-600" @click="openEdit(account)">编辑</button><button v-if="!account.archived" class="min-h-11 px-2 text-sm font-semibold text-rose-600" @click="askArchive(account)">归档</button><button v-else class="min-h-11 px-2 text-sm font-semibold text-brand-600" @click="restore(account)">恢复</button></div></div>
+        <div class="mt-4 border-t border-border pt-3 sm:mt-5 sm:pt-4">
+          <p class="text-xs text-muted-foreground">当前余额</p>
+          <p :class="(account.balance_cents || 0) >= 0 ? 'text-foreground' : 'text-rose-600'" class="mt-1 font-display text-2xl font-bold tabular-nums sm:text-3xl">{{ formatMoney(account.balance_cents || 0) }}</p>
+        </div>
+        <div class="mt-3 flex flex-wrap items-center justify-between gap-2"><span class="text-xs text-muted-foreground">已关联 {{ account.transaction_count || 0 }} 笔账单</span><div class="flex gap-2"><button v-if="!account.archived" class="min-h-11 px-2 text-sm font-semibold text-brand-600" @click="openEdit(account)">编辑</button><button v-if="!account.archived" class="min-h-11 px-2 text-sm font-semibold text-rose-600" @click="askArchive(account)">归档</button><button v-else class="min-h-11 px-2 text-sm font-semibold text-brand-600" @click="restore(account)">恢复</button></div></div>
       </article>
     </section>
     <Modal v-model="showForm" :title="editing ? '编辑账户' : '添加账户'">
@@ -36,7 +41,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { billingApi, type BankCardKind, type BankOption, type PersonalAccount, type PersonalAccountType } from '../api/billing'
-import { apiMessage } from '../utils/billing'
+import { apiMessage, formatMoney } from '../utils/billing'
 import PageHeader from '../components/PageHeader.vue'
 import Modal from '../components/Modal.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -53,6 +58,8 @@ const toast = reactive<{ message: string; type: 'success' | 'error' }>({ message
 const form = reactive({ type: 'bank_card' as PersonalAccountType, name: '', institution: '', identifier: '', card_kind: 'debit' as BankCardKind, card_number: '' })
 const visibleAccounts = computed(() => accounts.value.filter(item => showArchived.value || !item.archived))
 const summaries = computed(() => types.map(type => ({ ...type, type: type.value, count: accounts.value.filter(item => item.type === type.value && !item.archived).length })))
+// The total balance only counts accounts that are still in use.
+const totalBalance = computed(() => accounts.value.filter(item => !item.archived).reduce((sum, item) => sum + (item.balance_cents || 0), 0))
 function notify(message: string, type: 'success' | 'error' = 'success') { toast.message = ''; setTimeout(() => { toast.message = message; toast.type = type }) }
 function typeIcon(type: PersonalAccountType) { return icons[type] }
 function typeStyle(type: PersonalAccountType) { return type === 'bank_card' ? 'bg-brand-100 text-brand-700 dark:bg-brand-800 dark:text-accent' : type === 'wechat' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-sky-500/10 text-sky-700 dark:text-sky-300' }

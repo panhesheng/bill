@@ -71,18 +71,22 @@ type PersonalTransaction struct {
 // only display metadata: when supplied, complete card numbers are reduced to a
 // keyed fingerprint plus last four digits, and no payment credentials are retained.
 type PersonalAccount struct {
-	ID               uint      `gorm:"primarykey" json:"id"`
-	UserID           uint      `gorm:"not null;index;uniqueIndex:idx_personal_account_user_name;uniqueIndex:idx_personal_account_user_card" json:"user_id"`
-	Type             string    `gorm:"size:20;not null;index" json:"type"`
-	Name             string    `gorm:"size:80;not null;uniqueIndex:idx_personal_account_user_name" json:"name"`
-	Institution      string    `gorm:"size:80;not null" json:"institution"`
-	Identifier       string    `gorm:"size:64" json:"identifier"`
-	CardKind         string    `gorm:"size:16;not null;default:''" json:"card_kind"`
-	CardFingerprint  *string   `gorm:"size:64;uniqueIndex:idx_personal_account_user_card" json:"-"`
-	Archived         bool      `gorm:"not null;default:false;index" json:"archived"`
-	TransactionCount int64     `gorm:"-" json:"transaction_count"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ID               uint    `gorm:"primarykey" json:"id"`
+	UserID           uint    `gorm:"not null;index;uniqueIndex:idx_personal_account_user_name;uniqueIndex:idx_personal_account_user_card" json:"user_id"`
+	Type             string  `gorm:"size:20;not null;index" json:"type"`
+	Name             string  `gorm:"size:80;not null;uniqueIndex:idx_personal_account_user_name" json:"name"`
+	Institution      string  `gorm:"size:80;not null" json:"institution"`
+	Identifier       string  `gorm:"size:64" json:"identifier"`
+	CardKind         string  `gorm:"size:16;not null;default:''" json:"card_kind"`
+	CardFingerprint  *string `gorm:"size:64;uniqueIndex:idx_personal_account_user_card" json:"-"`
+	Archived         bool    `gorm:"not null;default:false;index" json:"archived"`
+	TransactionCount int64   `gorm:"-" json:"transaction_count"`
+	// BalanceCents is the money currently held by the account: income and
+	// refunds add to it, expenses and outgoing transfers take from it and
+	// incoming transfers add to it.
+	BalanceCents int64     `gorm:"-" json:"balance_cents"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // PersonalLedger is private to one user. It is deliberately separate from

@@ -64,6 +64,8 @@ export interface PersonalAccount {
   card_kind?: BankCardKind
   archived: boolean
   transaction_count?: number
+  // balance_cents is the money currently held by the account.
+  balance_cents?: number
   created_at?: string
   updated_at?: string
 }
