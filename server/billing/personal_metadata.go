@@ -2,12 +2,14 @@ package billing
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"path"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"smallgo/server/audit"
 	"smallgo/server/response"
 
 	"github.com/gin-gonic/gin"
@@ -202,6 +204,7 @@ func handleListPersonalLedgers(db *gorm.DB) gin.HandlerFunc {
 				response.ErrorInternal(c, "获取账本失败")
 				return
 			}
+			items[i].CanDelete = !items[i].IsDefault && items[i].TransactionCount == 0
 		}
 		response.Success(c, items)
 	}
@@ -406,6 +409,44 @@ func handleRestorePersonalLedger(db *gorm.DB) gin.HandlerFunc {
 		ledger.Archived = false
 		ledger.SortOrder = maxOrder + 1
 		response.Success(c, ledger)
+	}
+}
+
+// handleDeletePersonalLedger removes a ledger for good. Ledgers that already
+// hold bills cannot be deleted, because the bills would lose the ledger they
+// belong to.
+func handleDeletePersonalLedger(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+		if err != nil {
+			response.ErrorBadRequest(c, "无效的账本 ID")
+			return
+		}
+		userID := c.GetUint("userID")
+		ledger, err := ownedPersonalLedger(db, userID, uint(id), false)
+		if err != nil {
+			respondPersonalError(c, err, "账本不存在")
+			return
+		}
+		if ledger.IsDefault {
+			response.ErrorBadRequest(c, "默认账本不能删除")
+			return
+		}
+		var count int64
+		if err := db.Model(&PersonalTransaction{}).Where("user_id = ? AND ledger_id = ?", userID, ledger.ID).Count(&count).Error; err != nil {
+			response.ErrorInternal(c, "删除账本失败")
+			return
+		}
+		if count > 0 {
+			response.ErrorBadRequest(c, fmt.Sprintf("该账本已关联 %d 笔账单，无法删除。可以选择归档账本。", count))
+			return
+		}
+		if err := db.Delete(&ledger).Error; err != nil {
+			response.ErrorInternal(c, "删除账本失败")
+			return
+		}
+		audit.Log(db, c, "personal_ledger_delete", "personal_ledger", ledger.ID, "删除个人账本")
+		response.Success(c, nil)
 	}
 }
 

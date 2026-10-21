@@ -108,6 +108,8 @@ export interface PersonalLedger {
   is_default?: boolean
   archived?: boolean
   transaction_count?: number
+  // can_delete tells whether the ledger may be deleted for good.
+  can_delete?: boolean
   created_at?: string
   updated_at?: string
 }
@@ -296,6 +298,7 @@ export const billingApi = {
   personalLedgerUpdate: (id: number, data: { name: string; currency: string; cover?: string }) => request.put(`/api/billing/personal/ledgers/${id}`, data),
   personalLedgerOrder: (ledgerIds: number[]) => request.put('/api/billing/personal/ledgers/order', { ledger_ids: ledgerIds }),
   personalLedgerDelete: (id: number) => request.delete(`/api/billing/personal/ledgers/${id}`),
+  personalLedgerPermanentDelete: (id: number) => request.delete(`/api/billing/personal/ledgers/${id}/permanent`),
   personalLedgerRestore: (id: number) => request.post(`/api/billing/personal/ledgers/${id}/restore`),
   uploadImage: (file: File) => {
     const form = new FormData()

@@ -99,19 +99,22 @@ type PersonalAccount struct {
 // SharedLedger so a one-person bookkeeping workflow never acquires membership
 // and settlement semantics.
 type PersonalLedger struct {
-	ID                  uint      `gorm:"primarykey" json:"id"`
-	UserID              uint      `gorm:"not null;index;uniqueIndex:idx_personal_ledger_user_name" json:"user_id"`
-	Name                string    `gorm:"size:100;not null;uniqueIndex:idx_personal_ledger_user_name" json:"name"`
-	Currency            string    `gorm:"size:8;not null;default:CNY" json:"currency"`
-	Cover               string    `gorm:"size:512;not null;default:coral" json:"cover"`
-	SortOrder           int       `gorm:"not null;default:0;index" json:"sort_order"`
-	IsDefault           bool      `gorm:"not null;default:false;index" json:"is_default"`
-	CategoriesSeeded    bool      `gorm:"not null;default:false" json:"-"`
-	SubcategoriesSeeded bool      `gorm:"not null;default:false" json:"-"`
-	Archived            bool      `gorm:"not null;default:false;index" json:"archived"`
-	TransactionCount    int64     `gorm:"-" json:"transaction_count"`
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	ID                  uint   `gorm:"primarykey" json:"id"`
+	UserID              uint   `gorm:"not null;index;uniqueIndex:idx_personal_ledger_user_name" json:"user_id"`
+	Name                string `gorm:"size:100;not null;uniqueIndex:idx_personal_ledger_user_name" json:"name"`
+	Currency            string `gorm:"size:8;not null;default:CNY" json:"currency"`
+	Cover               string `gorm:"size:512;not null;default:coral" json:"cover"`
+	SortOrder           int    `gorm:"not null;default:0;index" json:"sort_order"`
+	IsDefault           bool   `gorm:"not null;default:false;index" json:"is_default"`
+	CategoriesSeeded    bool   `gorm:"not null;default:false" json:"-"`
+	SubcategoriesSeeded bool   `gorm:"not null;default:false" json:"-"`
+	Archived            bool   `gorm:"not null;default:false;index" json:"archived"`
+	TransactionCount    int64  `gorm:"-" json:"transaction_count"`
+	// CanDelete tells whether the ledger may be deleted for good. Ledgers
+	// that already hold bills have to be archived instead.
+	CanDelete bool      `gorm:"-" json:"can_delete"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type PersonalCategory struct {

@@ -65,7 +65,11 @@
                 <button type="button" class="icon-button" :disabled="index === activeLedgers.length - 1 || reordering" :aria-label="`${ledger.name}向后移动`" @click="moveLedger(index, 1)"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 18 6-6-6-6" /></svg></button>
                 <span class="hidden cursor-grab items-center gap-1 px-2 text-xs text-muted-foreground lg:flex"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-width="2" d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01" /></svg>拖动</span>
               </div>
-              <button type="button" class="min-h-11 rounded-full px-3 text-sm font-bold text-rose-600 disabled:pointer-events-none disabled:opacity-35" :disabled="ledger.is_default" :title="ledger.is_default ? '默认账本不能归档' : undefined" @click="askArchive(ledger)">归档</button>
+              <div class="flex items-center gap-1">
+                <button type="button" class="min-h-11 rounded-full px-3 text-sm font-bold text-rose-600 disabled:pointer-events-none disabled:opacity-35" :disabled="ledger.is_default" :title="ledger.is_default ? '默认账本不能归档' : undefined" @click="askArchive(ledger)">归档</button>
+                <button v-if="ledger.can_delete" type="button" class="min-h-11 rounded-full px-3 text-sm font-bold text-rose-600" @click="askDelete(ledger)">删除</button>
+                <span v-else-if="!ledger.is_default" class="px-1 text-xs text-muted-foreground">已关联账单，仅可归档</span>
+              </div>
             </div>
           </div>
         </article>
@@ -79,6 +83,7 @@
           <span class="h-11 w-16 shrink-0 rounded-xl border border-white/10" :style="coverStyle(ledger.cover)" aria-hidden="true"></span>
           <div class="min-w-0 flex-1"><p class="truncate font-bold">{{ ledger.name }}</p><p class="text-xs text-muted-foreground">{{ ledger.transaction_count || 0 }} 笔账单</p></div>
           <button type="button" class="btn-ghost min-h-11 px-4" @click="restoreLedger(ledger)">恢复</button>
+          <button v-if="ledger.can_delete" type="button" class="min-h-11 px-3 text-sm font-bold text-rose-600" @click="askDelete(ledger)">删除</button>
         </div>
       </div>
     </section>
@@ -108,6 +113,7 @@
     </Modal>
 
     <ConfirmDialog v-model="showArchive" title="归档账本？" :message="archiveMessage" confirm-text="确认归档" confirm-type="danger" @confirm="archiveLedger" />
+    <ConfirmDialog v-model="showDelete" title="删除账本？" :message="deleteMessage" confirm-text="确认删除" confirm-type="danger" @confirm="deleteLedger" />
     <Toast :message="toast.message" :type="toast.type" />
   </div>
 </template>
@@ -146,8 +152,10 @@ const saving = ref(false)
 const reordering = ref(false)
 const showForm = ref(false)
 const showArchive = ref(false)
+const showDelete = ref(false)
 const editing = ref<PersonalLedger | null>(null)
 const archiving = ref<PersonalLedger | null>(null)
+const deleting = ref<PersonalLedger | null>(null)
 const nameInput = ref<HTMLInputElement | null>(null)
 const draggedId = ref<number | null>(null)
 const dragOverId = ref<number | null>(null)
@@ -162,6 +170,7 @@ const archivedLedgers = computed(() => ledgers.value.filter(item => item.archive
 const hasCustomCover = computed(() => Boolean(coverFile.value || form.cover.startsWith('/uploads/')))
 const coverPreview = computed(() => coverFilePreview.value ? imageCoverStyle(coverFilePreview.value) : form.cover.startsWith('/uploads/') ? coverStyle(form.cover) : null)
 const archiveMessage = computed(() => archiving.value ? `归档“${archiving.value.name}”后将不能继续记账，但历史账单和统计都会保留。` : '')
+const deleteMessage = computed(() => deleting.value ? `“${deleting.value.name}”将被永久删除，此操作无法撤销。若账本已关联账单，请改用归档。` : '')
 
 function listData<T>(response: any): T[] { const data = response.data?.data; return Array.isArray(data) ? data : data?.items || [] }
 function notify(message: string, type: 'success' | 'error' = 'success') { toast.message = ''; setTimeout(() => { toast.message = message; toast.type = type }) }
@@ -233,6 +242,8 @@ function dropLedger(targetId: number) { const sourceId = draggedId.value; endDra
 
 function askArchive(ledger: PersonalLedger) { archiving.value = ledger; showArchive.value = true }
 async function archiveLedger() { if (!archiving.value) return; try { await billingApi.personalLedgerDelete(archiving.value.id); notify('账本已归档'); await load() } catch (error) { notify(apiMessage(error, '账本归档失败'), 'error') } }
+function askDelete(ledger: PersonalLedger) { deleting.value = ledger; showDelete.value = true }
+async function deleteLedger() { if (!deleting.value) return; try { await billingApi.personalLedgerPermanentDelete(deleting.value.id); notify('账本已删除'); await load() } catch (error) { notify(apiMessage(error, '账本删除失败'), 'error') } }
 async function restoreLedger(ledger: PersonalLedger) { try { await billingApi.personalLedgerRestore(ledger.id); notify('账本已恢复'); await load() } catch (error) { notify(apiMessage(error, '账本恢复失败'), 'error') } }
 
 watch(showForm, value => { if (!value) clearFilePreview() })
