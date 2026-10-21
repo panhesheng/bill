@@ -146,6 +146,25 @@ export interface PersonalStats {
   trend: Array<{ month: string; income_cents: number; expense_cents: number }>
 }
 
+// FlowEntry is one period of the cash flow list.
+export interface FlowEntry {
+  key: string
+  title: string
+  subtitle: string
+  income_cents: number
+  expense_cents: number
+  balance_cents: number
+  count: number
+}
+
+export interface PersonalFlow {
+  granularity: 'year' | 'month' | 'day'
+  year: number
+  month: number
+  entries: FlowEntry[]
+  available_years: number[]
+}
+
 export interface LedgerListItem {
   id: number
   name: string
@@ -285,6 +304,7 @@ export const billingApi = {
   personalDelete: (id: number) => request.delete(`/api/billing/personal/transactions/${id}`),
   personalRefundableTransactions: (params: { ledger_id?: number; keyword?: string; limit?: number } = {}) => request.get('/api/billing/personal/refundable-transactions', { params }),
   personalStats: (params: Record<string, unknown> = {}) => request.get('/api/billing/personal/stats', { params }),
+  personalFlow: (params: { year?: number; month?: number; ledger_id?: number } = {}) => request.get('/api/billing/personal/flow', { params }),
   personalExport: (params: Record<string, unknown> = {}) => request.get('/api/billing/personal/export', { params, responseType: 'blob' }),
   personalAccounts: (includeArchived = false) => request.get('/api/billing/personal/accounts', { params: includeArchived ? { include_archived: true } : {} }),
   personalAccountOptions: () => request.get('/api/billing/personal/account-options'),

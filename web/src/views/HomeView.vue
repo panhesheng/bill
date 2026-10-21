@@ -91,33 +91,54 @@
         </article>
 
         <section class="trend-card surface">
-          <div class="flex items-start justify-between gap-3">
+          <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p class="section-kicker">月度走势</p>
-              <h2 class="section-title">近六个月趋势</h2>
-              <p class="section-copy">收入与支出的月度对比</p>
+              <p class="section-kicker">收支流水</p>
+              <h2 class="section-title">{{ flowTitle }}</h2>
+              <p class="section-copy">收入、支出与结余的逐期对比</p>
             </div>
             <RouterLink to="/admin/analysis" class="section-link">详细分析</RouterLink>
           </div>
-          <div v-if="hasTrendData" class="mt-7">
-            <div class="flex h-44 items-end gap-3 sm:gap-5" role="img" aria-label="近六个月收入与支出柱状图">
-              <div v-for="item in trend" :key="item.month" class="flex min-w-0 flex-1 flex-col items-center gap-2">
-                <div class="flex h-32 w-full items-end justify-center gap-1.5 border-b border-border">
-                  <div class="chart-bar bg-brand-400" :style="{ height: chartHeight(item.income_cents) }" :title="`收入 ${formatMoney(item.income_cents)}`"></div>
-                  <div class="chart-bar bg-[#ea766f]" :style="{ height: chartHeight(item.expense_cents) }" :title="`支出 ${formatMoney(item.expense_cents)}`"></div>
-                </div>
-                <span class="font-mono text-[10px] text-muted-foreground">{{ item.month.slice(5) }}月</span>
-              </div>
-            </div>
-            <div class="mt-3 flex gap-5 text-xs text-muted-foreground">
-              <span class="flex items-center gap-2"><i class="h-2.5 w-2.5 rounded-full bg-brand-400"></i>收入</span>
-              <span class="flex items-center gap-2"><i class="h-2.5 w-2.5 rounded-full bg-[#ea766f]"></i>支出</span>
-            </div>
+          <div class="mt-4 flex flex-wrap items-center gap-2">
+            <label class="flow-picker">
+              <span class="sr-only">选择年份</span>
+              <select v-model.number="flowYear" class="input-field h-10 min-h-10 py-0 text-sm" @change="onFlowYearChange">
+                <option :value="0">全部年份</option>
+                <option v-for="item in flowYears" :key="item" :value="item">{{ item }} 年</option>
+              </select>
+            </label>
+            <label v-if="flowYear" class="flow-picker">
+              <span class="sr-only">选择月份</span>
+              <select v-model.number="flowMonth" class="input-field h-10 min-h-10 py-0 text-sm" @change="loadFlow">
+                <option :value="0">全部月份</option>
+                <option v-for="item in monthOptions" :key="item" :value="item">{{ item }} 月</option>
+              </select>
+            </label>
+            <span class="text-xs text-muted-foreground">{{ flowUnitLabel }}</span>
           </div>
-          <div v-else class="chart-empty">
+          <div v-if="flowLoading" class="mt-5 space-y-2">
+            <div v-for="n in 4" :key="n" class="h-16 animate-pulse rounded-xl bg-muted/60"></div>
+          </div>
+          <div v-else-if="!flowEntries.length" class="chart-empty">
             <div class="empty-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
-            <p class="mt-5 font-bold">还没有趋势数据</p>
-            <p class="mt-1 text-sm text-muted-foreground">记下第一笔收支后，这里会自动形成趋势。</p>
+            <p class="mt-5 font-bold">这段时间还没有收支</p>
+            <p class="mt-1 text-sm text-muted-foreground">换个时间范围看看，或先记下第一笔。</p>
+          </div>
+          <div v-else class="mt-4 divide-y divide-border">
+            <article v-for="entry in flowEntries" :key="entry.key" class="flex flex-wrap items-center gap-x-4 gap-y-1 py-3">
+              <div class="min-w-0 flex-1 basis-24">
+                <p class="truncate font-display text-lg font-bold leading-tight">{{ entry.title }}</p>
+                <p v-if="entry.subtitle" class="font-mono text-[11px] text-muted-foreground">{{ entry.subtitle }}</p>
+              </div>
+              <div class="flex min-w-0 flex-[2] flex-wrap items-baseline justify-end gap-x-4 gap-y-1 text-sm">
+                <span class="text-muted-foreground">收入 <strong class="font-mono font-semibold tabular-nums text-brand-700 dark:text-brand-300">{{ formatMoney(entry.income_cents) }}</strong></span>
+                <span class="text-muted-foreground">支出 <strong class="font-mono font-semibold tabular-nums text-[#bb4944] dark:text-[#ff9a90]">{{ formatMoney(entry.expense_cents) }}</strong></span>
+              </div>
+              <div class="w-full text-right sm:w-auto sm:min-w-36">
+                <span class="text-xs text-muted-foreground">结余</span>
+                <strong :class="entry.balance_cents >= 0 ? 'text-foreground' : 'text-[#bb4944] dark:text-[#ff9a90]'" class="ml-2 font-mono text-base font-bold tabular-nums">{{ formatMoney(entry.balance_cents) }}</strong>
+              </div>
+            </article>
           </div>
         </section>
 
@@ -216,7 +237,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { billingApi, type LedgerListItem, type PersonalTransaction, type StatsSummary } from '../api/billing'
+import { billingApi, type FlowEntry, type LedgerListItem, type PersonalTransaction, type StatsSummary } from '../api/billing'
 import { useAuthStore } from '../stores/auth'
 import { apiMessage, formatDate, formatMoney } from '../utils/billing'
 import CategoryIcon from '../components/billing/CategoryIcon.vue'
@@ -228,7 +249,11 @@ const loading = ref(true)
 const showQuickEntry = ref(false)
 const toast = reactive<{ message: string; type: 'success' | 'error' }>({ message: '', type: 'success' })
 const monthSummary = ref<StatsSummary>({ income_cents: 0, expense_cents: 0, balance_cents: 0, count: 0 })
-const trend = ref<Array<{ month: string; income_cents: number; expense_cents: number }>>([])
+const flowEntries = ref<FlowEntry[]>([])
+const flowYears = ref<number[]>([])
+const flowYear = ref(new Date().getFullYear())
+const flowMonth = ref(0)
+const flowLoading = ref(false)
 const recent = ref<PersonalTransaction[]>([])
 const ledgers = ref<LedgerListItem[]>([])
 const pendingInvitations = ref(0)
@@ -257,25 +282,27 @@ const greeting = computed(() => {
   return '晚上好'
 })
 const currentMonthText = computed(() => new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit' }).format(new Date()).replace('/', '.'))
-const hasTrendData = computed(() => trend.value.some(item => item.income_cents > 0 || item.expense_cents > 0))
+const monthOptions = computed(() => Array.from({ length: 12 }, (_, index) => index + 1))
+const flowTitle = computed(() => {
+  if (!flowYear.value) return '全部收支流水'
+  if (flowMonth.value) return `${flowYear.value} 年 ${flowMonth.value} 月`
+  return `${flowYear.value} 年收支`
+})
+const flowUnitLabel = computed(() => {
+  if (!flowYear.value) return '按年份汇总，倒序排列'
+  if (flowMonth.value) return '按日汇总，倒序排列'
+  return '按月汇总，倒序排列'
+})
 const savingsRate = computed(() => {
   if (monthSummary.value.income_cents <= 0) return 0
   return Math.round(monthSummary.value.balance_cents / monthSummary.value.income_cents * 100)
 })
-const maxTrend = computed(() => Math.max(1, ...trend.value.flatMap(item => [item.income_cents, item.expense_cents])))
-
-function chartHeight(value: number) {
-  if (!value) return '3px'
-  return `${Math.max(8, Math.round(value / maxTrend.value * 100))}%`
-}
-
 async function loadDashboard() {
   loading.value = true
   try {
     const response = await billingApi.dashboard()
     const data = response.data.data
     monthSummary.value = data.month.summary
-    trend.value = data.month.trend || []
     recent.value = data.recent || []
     ledgers.value = data.ledgers || []
     pendingInvitations.value = data.pending_invitations || 0
@@ -284,6 +311,30 @@ async function loadDashboard() {
   } finally {
     loading.value = false
   }
+  loadFlow()
+}
+
+async function loadFlow() {
+  flowLoading.value = true
+  try {
+    const response = await billingApi.personalFlow({ year: flowYear.value, month: flowMonth.value })
+    const data = response.data?.data
+    flowEntries.value = data?.entries || []
+    const years = data?.available_years || []
+    const current = new Date().getFullYear()
+    // The current year stays selectable even before the first bill is written.
+    flowYears.value = years.includes(current) ? years : [current, ...years]
+  } catch (error) {
+    notify(apiMessage(error, '收支流水加载失败'), 'error')
+  } finally {
+    flowLoading.value = false
+  }
+}
+
+function onFlowYearChange() {
+  // Switching to "all years" keeps the month out of the request.
+  flowMonth.value = 0
+  loadFlow()
 }
 
 function notify(message: string, type: 'success' | 'error' = 'success') {
@@ -353,8 +404,9 @@ onMounted(loadDashboard)
 .section-title { @apply mt-1 font-display text-xl font-extrabold tracking-tight; }
 .section-copy { @apply mt-1 text-sm text-muted-foreground; }
 .section-link { @apply inline-flex min-h-11 items-center rounded-full px-3 text-sm font-bold text-brand-700 transition-colors hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-muted; }
-.chart-bar { @apply w-[38%] min-w-1 rounded-t-full transition-[height] duration-300; }
 .chart-empty { @apply flex min-h-[13rem] flex-col items-center justify-center; }
+.flow-picker { @apply inline-flex; }
+.flow-picker select { @apply min-w-28; }
 .empty-bars { @apply flex h-14 items-end gap-2; }
 .empty-bars i { @apply w-2 rounded-full bg-muted; }
 .empty-bars i:nth-child(1), .empty-bars i:nth-child(6) { height: 35%; }
