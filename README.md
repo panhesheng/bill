@@ -157,6 +157,8 @@ make build-docker   # 从 build-all 产物离线构建当前架构的 techfunway
 make fnpack         # 飞牛 fnOS amd64/arm64，需要 Docker 与 fnpack
 ```
 
+飞牛 fnOS 打包的完整流程（环境准备、脚本内部步骤、产物校验与安装）见 [docs/fnpack-build.md](docs/fnpack-build.md)。
+
 发行产物位于 `release/<VERSION>/`，其中包含两个可直接部署的 compose 文件：
 
 ```bash

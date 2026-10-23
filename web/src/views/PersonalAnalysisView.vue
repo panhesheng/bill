@@ -79,36 +79,60 @@
 
       <div class="grid gap-4 xl:grid-cols-2">
         <section class="surface rounded-2xl p-4 sm:p-6 xl:col-span-2" aria-labelledby="trend-title">
-          <ChartHeading id="trend-title" title="收支趋势" :description="trendDescription" />
-          <div v-if="!trendSeries.length" class="empty-state h-64">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <ChartHeading id="trend-title" title="收支趋势" :description="trendDescription" />
+            <label class="filter-field">
+              <span>年份</span>
+              <select v-model.number="trendYear" class="input-field h-10 min-h-10 w-28 py-0 text-sm" @change="load">
+                <option v-for="year in trendYearOptions" :key="year" :value="year">{{ year }} 年</option>
+              </select>
+            </label>
+          </div>
+          <div v-if="!hasTrendData" class="empty-state h-64">
             <EmptyChartIcon />
-            <span class="mt-3">当前范围暂无收支趋势</span>
+            <span class="mt-3">{{ trendYear }} 年暂无收支趋势</span>
           </div>
           <template v-else>
-            <div class="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground" aria-label="图例">
-              <span class="flex items-center gap-2"><i class="w-7 border-t-2 border-dashed border-emerald-600" aria-hidden="true"></i>收入（虚线圆点）</span>
-              <span class="flex items-center gap-2"><i class="w-7 border-t-2 border-rose-600" aria-hidden="true"></i>支出（实线方点）</span>
+            <div class="mt-5 flex flex-wrap items-center gap-2" aria-label="图例">
+              <span class="text-xs text-muted-foreground">曲线：</span>
+              <button type="button" class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors" :class="seriesVisibility.income ? 'border-emerald-600/40 bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200' : 'border-border text-muted-foreground opacity-60'" :aria-pressed="seriesVisibility.income" @click="seriesVisibility.income = !seriesVisibility.income">
+                <i class="w-6 border-t-2 border-dashed border-emerald-600" aria-hidden="true"></i>收入
+              </button>
+              <button type="button" class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors" :class="seriesVisibility.expense ? 'border-rose-600/40 bg-rose-50 text-rose-800 dark:bg-rose-500/10 dark:text-rose-200' : 'border-border text-muted-foreground opacity-60'" :aria-pressed="seriesVisibility.expense" @click="seriesVisibility.expense = !seriesVisibility.expense">
+                <i class="w-6 border-t-2 border-rose-600" aria-hidden="true"></i>支出
+              </button>
+              <button type="button" class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors" :class="seriesVisibility.balance ? 'border-indigo-600/40 bg-indigo-50 text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-200' : 'border-border text-muted-foreground opacity-60'" :aria-pressed="seriesVisibility.balance" @click="seriesVisibility.balance = !seriesVisibility.balance">
+                <i class="w-6 border-t-2 border-dotted border-indigo-600" aria-hidden="true"></i>结余
+              </button>
+              <span class="text-xs text-muted-foreground">点击可单独隐藏或显示</span>
             </div>
-            <div class="mt-3 overflow-hidden" role="img" :aria-label="`${trendDescription}。收入与支出的完整数值见数据表。`">
+            <div class="mt-3 overflow-hidden" role="img" :aria-label="`${trendDescription}。各月金额已标注在曲线上。`">
               <svg class="h-auto min-h-64 w-full" :viewBox="`0 0 ${chart.width} ${chart.height}`" aria-hidden="true">
                 <g class="text-muted-foreground">
                   <line v-for="tick in yTicks" :key="tick.value" :x1="chart.left" :x2="chart.width - chart.right" :y1="tick.y" :y2="tick.y" stroke="currentColor" stroke-opacity=".18" />
                   <text v-for="tick in yTicks" :key="`label-${tick.value}`" :x="chart.left - 10" :y="tick.y + 4" text-anchor="end" fill="currentColor" font-size="11">{{ compactMoney(tick.value) }}</text>
                   <text v-for="tick in xTicks" :key="tick.index" :x="tick.x" :y="chart.height - 12" text-anchor="middle" fill="currentColor" font-size="11">{{ tick.label }}</text>
+                  <line v-if="chartScale.min < 0" :x1="chart.left" :x2="chart.width - chart.right" :y1="pointY(0)" :y2="pointY(0)" stroke="currentColor" stroke-opacity=".45" />
                 </g>
-                <polyline :points="incomeLine" fill="none" stroke="#047857" stroke-dasharray="7 5" stroke-linecap="round" stroke-linejoin="round" stroke-width="3" />
-                <polyline :points="expenseLine" fill="none" stroke="#be123c" stroke-linecap="round" stroke-linejoin="round" stroke-width="3" />
-                <g v-for="(item, index) in trendSeries" :key="item.label">
-                  <circle :cx="pointX(index)" :cy="pointY(item.income_cents)" r="4" fill="#047857"><title>{{ item.label }}收入 {{ formatMoney(item.income_cents) }}</title></circle>
-                  <rect :x="pointX(index) - 4" :y="pointY(item.expense_cents) - 4" width="8" height="8" rx="1" fill="#be123c"><title>{{ item.label }}支出 {{ formatMoney(item.expense_cents) }}</title></rect>
+                <path v-if="seriesVisibility.income" :d="incomePath" fill="none" stroke="#047857" stroke-dasharray="7 5" stroke-linecap="round" stroke-linejoin="round" stroke-width="3" />
+                <path v-if="seriesVisibility.expense" :d="expensePath" fill="none" stroke="#be123c" stroke-linecap="round" stroke-linejoin="round" stroke-width="3" />
+                <path v-if="seriesVisibility.balance" :d="balancePath" fill="none" stroke="#4338ca" stroke-dasharray="2 5" stroke-linecap="round" stroke-linejoin="round" stroke-width="3" />
+                <g v-for="(item, index) in trendPoints" :key="item.label">
+                  <template v-if="seriesVisibility.income">
+                    <circle :cx="item.x" :cy="item.incomeY" r="4" fill="#047857"><title>{{ item.label }}收入 {{ formatMoney(item.income_cents) }}</title></circle>
+                    <text v-if="item.income_cents" :x="item.x" :y="item.labels.income" text-anchor="middle" font-size="10" font-weight="700" fill="#047857" class="[paint-order:stroke] [stroke:rgb(var(--color-surface))] [stroke-width:3] [stroke-linejoin:round]">{{ trendLabel(item.income_cents) }}</text>
+                  </template>
+                  <template v-if="seriesVisibility.expense">
+                    <rect :x="item.x - 4" :y="item.expenseY - 4" width="8" height="8" rx="1" fill="#be123c"><title>{{ item.label }}支出 {{ formatMoney(item.expense_cents) }}</title></rect>
+                    <text v-if="item.expense_cents" :x="item.x" :y="item.labels.expense" text-anchor="middle" font-size="10" font-weight="700" fill="#be123c" class="[paint-order:stroke] [stroke:rgb(var(--color-surface))] [stroke-width:3] [stroke-linejoin:round]">{{ trendLabel(item.expense_cents) }}</text>
+                  </template>
+                  <template v-if="seriesVisibility.balance">
+                    <rect :x="item.x - 4" :y="item.balanceY - 4" width="8" height="8" rx="1" fill="#4338ca" :transform="`rotate(45 ${item.x} ${item.balanceY})`"><title>{{ item.label }}结余 {{ formatMoney(item.balance_cents) }}</title></rect>
+                    <text v-if="item.balance_cents" :x="item.x" :y="item.labels.balance" text-anchor="middle" font-size="10" font-weight="700" fill="#4338ca" class="[paint-order:stroke] [stroke:rgb(var(--color-surface))] [stroke-width:3] [stroke-linejoin:round]">{{ trendLabel(item.balance_cents) }}</text>
+                  </template>
                 </g>
               </svg>
             </div>
-            <table class="sr-only">
-              <caption>收支趋势数据</caption>
-              <thead><tr><th scope="col">日期</th><th scope="col">收入</th><th scope="col">支出</th></tr></thead>
-              <tbody><tr v-for="item in trendSeries" :key="`trend-table-${item.label}`"><th scope="row">{{ item.label }}</th><td>{{ formatMoney(item.income_cents) }}</td><td>{{ formatMoney(item.expense_cents) }}</td></tr></tbody>
-            </table>
           </template>
         </section>
 
@@ -137,6 +161,7 @@ interface TrendStat { month: string; income_cents: number; expense_cents: number
 interface LedgerStat { ledger_id?: number; id?: number; ledger_name?: string; name?: string; income_cents: number; expense_cents: number; count: number }
 interface TagStat { tag_id?: number; id?: number; tag?: string; name?: string; amount_cents: number; count: number }
 interface DailyStat { date: string; income_cents: number; expense_cents: number }
+interface MonthlyStat { month: string; income_cents: number; expense_cents: number; balance_cents: number; count: number }
 interface WeekdayStat { weekday: number | string; amount_cents: number; count: number }
 interface AnalysisStats {
   summary: Summary
@@ -147,9 +172,10 @@ interface AnalysisStats {
   daily: DailyStat[]
   weekdays: WeekdayStat[]
   available_years?: number[]
+  monthly?: MonthlyStat[]
 }
 interface LedgerOption { id: number; name: string }
-interface TrendPoint { label: string; income_cents: number; expense_cents: number }
+interface TrendPoint { label: string; income_cents: number; expense_cents: number; balance_cents: number }
 interface RankingRow { key: string; label: string; amount_cents: number; count: number; detail?: string }
 
 const today = new Date()
@@ -164,9 +190,12 @@ const errorMessage = ref('')
 const filterError = ref('')
 const categoryMode = ref<'sub' | 'primary'>('sub')
 const categoryDrill = ref('')
+// The trend chart summarises a whole year, so it owns its own year picker and
+// is not limited by the date range of the other filters.
+const trendYear = ref(currentYear)
 const ledgerOptions = ref<LedgerOption[]>([])
 const emptySummary = (): Summary => ({ income_cents: 0, expense_cents: 0, balance_cents: 0, count: 0 })
-const stats = reactive<AnalysisStats>({ summary: emptySummary(), categories: [], trend: [], ledgers: [], tags: [], daily: [], weekdays: [], available_years: [] })
+const stats = reactive<AnalysisStats>({ summary: emptySummary(), categories: [], trend: [], ledgers: [], tags: [], daily: [], weekdays: [], available_years: [], monthly: [] })
 
 const savingRate = computed(() => stats.summary.income_cents ? Math.round(stats.summary.balance_cents / stats.summary.income_cents * 100) : 0)
 const scopeLabel = computed(() => applied.ledger_id ? (ledgerOptions.value.find(item => String(item.id) === applied.ledger_id)?.name || '指定账本') : '全部账本')
@@ -183,8 +212,22 @@ const yearOptions = computed(() => {
   return [...years].sort((a, b) => b - a)
 })
 const monthOptions = computed(() => Array.from({ length: 12 }, (_, index) => index + 1))
-const trendSeries = computed<TrendPoint[]>(() => stats.daily.map(item => ({ label: item.date, income_cents: item.income_cents, expense_cents: item.expense_cents })))
-const trendDescription = computed(() => '按日展示筛选区间内的收入与支出')
+const trendSeries = computed<TrendPoint[]>(() => monthlyRows.value.map(item => ({ label: item.label, income_cents: item.income_cents, expense_cents: item.expense_cents, balance_cents: item.balance_cents })))
+const monthlyRows = computed(() => (stats.monthly || []).map(item => ({
+  month: item.month,
+  label: monthLabel(item.month),
+  income_cents: item.income_cents,
+  expense_cents: item.expense_cents,
+  balance_cents: item.balance_cents,
+  count: item.count,
+})))
+const trendYearOptions = computed(() => {
+  const years = new Set<number>(yearOptions.value)
+  if (trendYear.value > 0) years.add(trendYear.value)
+  return [...years].sort((a, b) => b - a)
+})
+const trendDescription = computed(() => `按月汇总 · ${trendYear.value} 年 1-12 月的收入与支出`)
+const hasTrendData = computed(() => monthlyRows.value.some(item => item.count > 0))
 
 const categoryRows = computed<RankingRow[]>(() => {
   const rows = stats.categories || []
@@ -224,17 +267,94 @@ const ledgerRows = computed(() => stats.ledgers.slice().sort((a, b) => b.expense
 const tagRows = computed(() => stats.tags.slice().sort((a, b) => b.amount_cents - a.amount_cents).map((item, index) => ({ key: String(item.tag_id ?? item.id ?? index), label: item.tag || item.name || '未命名标签', amount_cents: item.amount_cents, count: item.count })))
 const weekdayRows = computed(() => stats.weekdays.filter(item => item.amount_cents > 0 || item.count > 0).map((item, index) => ({ key: String(item.weekday ?? index), label: weekdayLabel(item.weekday), amount_cents: item.amount_cents, count: item.count })).sort((a, b) => b.amount_cents - a.amount_cents))
 
-const chart = { width: 720, height: 280, left: 64, right: 18, top: 22, bottom: 42 }
-const maxTrend = computed(() => Math.max(1, ...trendSeries.value.flatMap(item => [item.income_cents, item.expense_cents])))
-const yTicks = computed(() => [maxTrend.value, Math.round(maxTrend.value / 2), 0].map(value => ({ value, y: pointY(value) })))
+const chart = { width: 720, height: 280, left: 72, right: 18, top: 32, bottom: 42 }
+// Every curve of the trend can be hidden on its own, and the scale follows
+// the curves that are still visible.
+const seriesVisibility = reactive({ income: true, expense: true, balance: true })
+const chartScale = computed(() => {
+  const values: number[] = []
+  trendSeries.value.forEach(item => {
+    if (seriesVisibility.income) values.push(item.income_cents)
+    if (seriesVisibility.expense) values.push(item.expense_cents)
+    if (seriesVisibility.balance) values.push(item.balance_cents)
+  })
+  const max = Math.max(0, ...values)
+  const min = Math.min(0, ...values)
+  return { max, min, span: max - min || 1 }
+})
+const yTicks = computed(() => {
+  const { max, min } = chartScale.value
+  const values = [max]
+  if (max > 0) values.push(Math.round(max / 2))
+  values.push(0)
+  if (min < 0) {
+    values.push(Math.round(min / 2))
+    values.push(min)
+  }
+  return values.filter((value, index) => values.indexOf(value) === index).map(value => ({ value, y: pointY(value) }))
+})
 const xTicks = computed(() => {
   const count = trendSeries.value.length
   if (!count) return []
-  const step = Math.max(1, Math.ceil(count / 6))
-  return trendSeries.value.map((item, index) => ({ index, x: pointX(index), label: axisDate(item.label) })).filter((_, index) => index % step === 0 || index === count - 1)
+  const step = Math.max(1, Math.ceil(count / 12))
+  return trendSeries.value.map((item, index) => ({ index, x: pointX(index), label: item.label })).filter((_, index) => index % step === 0 || index === count - 1)
 })
-const incomeLine = computed(() => trendSeries.value.map((item, index) => `${pointX(index)},${pointY(item.income_cents)}`).join(' '))
-const expenseLine = computed(() => trendSeries.value.map((item, index) => `${pointX(index)},${pointY(item.expense_cents)}`).join(' '))
+const incomePath = computed(() => smoothPath(trendSeries.value.map((item, index) => ({ x: pointX(index), y: pointY(item.income_cents) }))))
+const expensePath = computed(() => smoothPath(trendSeries.value.map((item, index) => ({ x: pointX(index), y: pointY(item.expense_cents) }))))
+const balancePath = computed(() => smoothPath(trendSeries.value.map((item, index) => ({ x: pointX(index), y: pointY(item.balance_cents) }))))
+// smoothPath draws a Catmull-Rom spline through the points and converts it
+// into cubic Béziers. The control points are kept inside the vertical range
+// of the two points they connect, so the curve never suggests a value the
+// data does not have.
+const SMOOTH_TENSION = 0.8
+function smoothPath(points: { x: number; y: number }[]) {
+  if (!points.length) return ''
+  if (points.length === 1) return `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`
+  if (points.length === 2) return `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)} L ${points[1].x.toFixed(2)} ${points[1].y.toFixed(2)}`
+  const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value))
+  let path = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const p0 = points[i - 1] || points[i]
+    const p1 = points[i]
+    const p2 = points[i + 1]
+    const p3 = points[i + 2] || p2
+    const low = Math.min(p1.y, p2.y)
+    const high = Math.max(p1.y, p2.y)
+    const c1x = p1.x + (p2.x - p0.x) / 6 * SMOOTH_TENSION
+    const c1y = clamp(p1.y + (p2.y - p0.y) / 6 * SMOOTH_TENSION, low, high)
+    const c2x = p2.x - (p3.x - p1.x) / 6 * SMOOTH_TENSION
+    const c2y = clamp(p2.y - (p3.y - p1.y) / 6 * SMOOTH_TENSION, low, high)
+    path += ` C ${c1x.toFixed(2)} ${c1y.toFixed(2)} ${c2x.toFixed(2)} ${c2y.toFixed(2)} ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`
+  }
+  return path
+}
+// Every point carries the position of its value label. The income label sits
+// above its point, the balance and the expense labels below theirs, and the
+// labels of one month are pushed apart when they would overlap.
+function layoutMonthLabels(input: { incomeY: number; expenseY: number; balanceY: number; income: number; expense: number; balance: number }) {
+  const labels: { key: string; y: number }[] = []
+  if (seriesVisibility.income && input.income) labels.push({ key: 'income', y: input.incomeY - 11 })
+  if (seriesVisibility.balance && input.balance) labels.push({ key: 'balance', y: input.balanceY + 15 })
+  if (seriesVisibility.expense && input.expense) labels.push({ key: 'expense', y: input.expenseY + 15 })
+  labels.sort((a, b) => a.y - b.y)
+  for (let i = 1; i < labels.length; i += 1) {
+    if (labels[i].y - labels[i - 1].y < 12) labels[i].y = labels[i - 1].y + 12
+  }
+  const result: Record<string, number> = {}
+  labels.forEach(label => { result[label.key] = label.y })
+  const keys = Object.keys(result)
+  if (!keys.length) return result
+  const overflow = Math.max(...keys.map(key => result[key])) - (chart.height - 26)
+  if (overflow > 0) keys.forEach(key => { result[key] -= overflow })
+  return result
+}
+const trendPoints = computed(() => trendSeries.value.map((item, index) => {
+  const incomeY = pointY(item.income_cents)
+  const expenseY = pointY(item.expense_cents)
+  const balanceY = pointY(item.balance_cents)
+  const labels = layoutMonthLabels({ incomeY, expenseY, balanceY, income: item.income_cents, expense: item.expense_cents, balance: item.balance_cents })
+  return { ...item, x: pointX(index), incomeY, expenseY, balanceY, labels }
+}))
 
 function localDate(value: Date) {
   const offset = value.getTimezoneOffset() * 60_000
@@ -254,6 +374,7 @@ function normalize(raw: Partial<AnalysisStats> | undefined): AnalysisStats {
     daily: Array.isArray(raw?.daily) ? raw.daily : [],
     weekdays: Array.isArray(raw?.weekdays) ? raw.weekdays : [],
     available_years: Array.isArray(raw?.available_years) ? raw.available_years : [],
+    monthly: Array.isArray(raw?.monthly) ? raw.monthly : [],
   }
 }
 function rememberLedgers(items: LedgerStat[]) {
@@ -327,7 +448,7 @@ async function load() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const params = { start: applied.start, end: applied.end, ledger_id: applied.ledger_id || undefined }
+    const params = { start: applied.start, end: applied.end, ledger_id: applied.ledger_id || undefined, trend_year: trendYear.value }
     const response = await billingApi.personalStats(params)
     const next = normalize(response.data.data as Partial<AnalysisStats>)
     Object.assign(stats, next)
@@ -355,13 +476,28 @@ function pointX(index: number) {
 }
 function pointY(value: number) {
   const usable = chart.height - chart.top - chart.bottom
-  return chart.top + usable - Math.max(0, value) / maxTrend.value * usable
+  const { min, span } = chartScale.value
+  return chart.top + usable - (value - min) / span * usable
 }
 function compactMoney(cents: number) {
   const yuan = cents / 100
   return `¥${new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 }).format(yuan)}`
 }
-function axisDate(value: string) { return /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(5, 10).replace('-', '/') : value.slice(0, 7) }
+// The value labels sit on the curve, so they stay short: thousands get a
+// separator and everything above ten thousand switches to the compact form.
+function trendLabel(cents: number) {
+  const yuan = cents / 100
+  const sign = yuan < 0 ? '-' : ''
+  const value = Math.abs(yuan)
+  if (value >= 10000) {
+    return `${sign}¥${new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 }).format(value)}`
+  }
+  return `${sign}¥${new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0 }).format(value)}`
+}
+function monthLabel(value: string) {
+  const month = Number(value.slice(5, 7))
+  return month >= 1 && month <= 12 ? `${month}月` : value
+}
 function weekdayLabel(value: number | string) {
   if (typeof value === 'string' && !/^\d+$/.test(value)) return value
   const labels = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']

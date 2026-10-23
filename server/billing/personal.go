@@ -726,6 +726,67 @@ func personalDimensions(db *gorm.DB, userID uint, start, end string, ledgerID ui
 	return combine(ledgerRows), combine(tagRows), daily, weekdays, nil
 }
 
+// monthlyTrendStat is one month of the yearly trend of the statistics page.
+type monthlyTrendStat struct {
+	Month        string `json:"month"`
+	IncomeCents  int64  `json:"income_cents"`
+	ExpenseCents int64  `json:"expense_cents"`
+	BalanceCents int64  `json:"balance_cents"`
+	Count        int64  `json:"count"`
+}
+
+// personalMonthlyTrend aggregates the income and the expenses of every month
+// of the requested year. The year fully defines the range, so the trend always
+// shows all twelve months of it, even the ones without any record.
+func personalMonthlyTrend(db *gorm.DB, userID uint, year int, ledgerID uint) ([]monthlyTrendStat, error) {
+	if year < 1 || year > 9999 {
+		year = time.Now().Year()
+	}
+	start := time.Date(year, time.January, 1, 0, 0, 0, 0, time.UTC)
+	end := start.AddDate(1, 0, 0)
+	query := db.Model(&PersonalTransaction{}).
+		Where("user_id = ? AND occurred_at >= ? AND occurred_at < ?", userID, start.Format("2006-01-02 15:04:05"), end.Format("2006-01-02 15:04:05"))
+	if ledgerID > 0 {
+		query = query.Where("ledger_id = ?", ledgerID)
+	}
+	var rows []struct {
+		Month string
+		Kind  string
+		Total int64
+		Count int64
+	}
+	if err := query.
+		Select("strftime('%Y-%m', occurred_at) AS month, kind, SUM(amount_cents) AS total, COUNT(*) AS count").
+		Group("month, kind").Order("month ASC").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	items := make([]monthlyTrendStat, 0, 12)
+	position := make(map[string]int, 12)
+	for i := 0; i < 12; i++ {
+		key := fmt.Sprintf("%d-%02d", year, i+1)
+		position[key] = len(items)
+		items = append(items, monthlyTrendStat{Month: key})
+	}
+	for _, row := range rows {
+		index, ok := position[row.Month]
+		if !ok {
+			continue
+		}
+		item := &items[index]
+		item.Count += row.Count
+		switch row.Kind {
+		case KindIncome:
+			item.IncomeCents += row.Total
+		case KindExpense:
+			item.ExpenseCents += row.Total
+		}
+	}
+	for i := range items {
+		items[i].BalanceCents = items[i].IncomeCents - items[i].ExpenseCents
+	}
+	return items, nil
+}
+
 func handlePersonalStats(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if _, err := ensurePersonalSetup(db, c.GetUint("userID")); err != nil {
@@ -756,7 +817,12 @@ func handlePersonalStats(db *gorm.DB) gin.HandlerFunc {
 			response.ErrorInternal(c, "统计分析失败")
 			return
 		}
-		response.Success(c, gin.H{"summary": summary, "categories": categories, "trend": trend, "ledgers": ledgers, "tags": tags, "daily": daily, "weekdays": weekdays, "available_years": years})
+		monthly, err := personalMonthlyTrend(db, c.GetUint("userID"), utils.Atoi(c.Query("trend_year"), 0), ledgerID)
+		if err != nil {
+			response.ErrorInternal(c, "统计分析失败")
+			return
+		}
+		response.Success(c, gin.H{"summary": summary, "categories": categories, "trend": trend, "ledgers": ledgers, "tags": tags, "daily": daily, "weekdays": weekdays, "available_years": years, "monthly": monthly})
 	}
 }
 

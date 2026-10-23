@@ -142,8 +142,9 @@ export interface StatsSummary {
 
 export interface PersonalStats {
   summary: StatsSummary
-  categories: Array<{ category: string; amount_cents: number; count: number }>
+  categories: Array<{ category: string; parent?: string; amount_cents: number; count: number }>
   trend: Array<{ month: string; income_cents: number; expense_cents: number }>
+  monthly: Array<{ month: string; income_cents: number; expense_cents: number; balance_cents: number; count: number }>
 }
 
 // FlowEntry is one period of the cash flow list.
