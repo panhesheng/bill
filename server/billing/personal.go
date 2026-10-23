@@ -223,12 +223,16 @@ func ownedCounterpartAccount(db *gorm.DB, userID, accountID uint) (PersonalAccou
 
 func handleListPersonal(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if _, err := ensurePersonalSetup(db, c.GetUint("userID")); err != nil {
+		ownerID, ok := dataOwner(db, c)
+		if !ok {
+			return
+		}
+		if _, err := ensurePersonalSetup(db, ownerID); err != nil {
 			response.ErrorInternal(c, "获取账单失败")
 			return
 		}
 		page, pageSize := utils.NormalizePage(utils.Atoi(c.Query("page"), 1), utils.Atoi(c.Query("pageSize"), 20))
-		query := personalQuery(db, c.GetUint("userID"), c)
+		query := personalQuery(db, ownerID, c)
 		var total int64
 		if err := query.Count(&total).Error; err != nil {
 			response.ErrorInternal(c, "获取账单失败")
@@ -359,6 +363,9 @@ func handleUpdatePersonal(db *gorm.DB) gin.HandlerFunc {
 			response.Error(c, http.StatusNotFound, response.CodeNotFound, "账单不存在")
 			return
 		}
+		// The state before the edit is kept so the audit log can tell what
+		// actually changed.
+		before := existing
 		var req personalRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			response.ErrorBadRequest(c, "请输入完整账单信息")
@@ -463,8 +470,45 @@ func handleUpdatePersonal(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		existing.Attachments = attachmentMap[existing.ID]
+		audit.Log(db, c, "personal_transaction_update", "personal_transaction", existing.ID, personalTransactionChangeSummary(before, existing))
 		response.Success(c, existing)
 	}
+}
+
+// auditAmount renders an amount in cents for the audit log.
+func auditAmount(cents int64) string {
+	return strconv.FormatFloat(float64(cents)/100, 'f', 2, 64)
+}
+
+// personalTransactionChangeSummary describes what an edit changed so the
+// audit log stays readable instead of just saying "updated".
+func personalTransactionChangeSummary(before, after PersonalTransaction) string {
+	changes := make([]string, 0, 7)
+	if before.Kind != after.Kind {
+		changes = append(changes, fmt.Sprintf("类型 %s→%s", before.Kind, after.Kind))
+	}
+	if before.AmountCents != after.AmountCents {
+		changes = append(changes, fmt.Sprintf("金额 %s→%s", auditAmount(before.AmountCents), auditAmount(after.AmountCents)))
+	}
+	if before.Category != after.Category {
+		changes = append(changes, fmt.Sprintf("分类 %s→%s", before.Category, after.Category))
+	}
+	if before.LedgerID != after.LedgerID {
+		changes = append(changes, "账本变更")
+	}
+	if before.AccountID != after.AccountID {
+		changes = append(changes, "账户变更")
+	}
+	if before.Note != after.Note {
+		changes = append(changes, "备注修改")
+	}
+	if !before.OccurredAt.Equal(after.OccurredAt) {
+		changes = append(changes, fmt.Sprintf("日期 %s→%s", before.OccurredAt.Format("2006-01-02"), after.OccurredAt.Format("2006-01-02")))
+	}
+	if len(changes) == 0 {
+		return "修改个人账单"
+	}
+	return "修改个人账单：" + strings.Join(changes, "，")
 }
 
 func handleDeletePersonal(db *gorm.DB) gin.HandlerFunc {
@@ -593,6 +637,10 @@ type dimensionStat struct {
 	IncomeCents  int64  `json:"income_cents"`
 	ExpenseCents int64  `json:"expense_cents"`
 	Count        int64  `json:"count"`
+	// The counts per kind let the client rank a dimension by income or by
+	// expense without mixing both directions.
+	IncomeCount  int64 `json:"income_count"`
+	ExpenseCount int64 `json:"expense_count"`
 }
 
 type dailyStat struct {
@@ -660,8 +708,10 @@ func personalDimensions(db *gorm.DB, userID uint, start, end string, ledgerID ui
 			switch row.Kind {
 			case KindIncome:
 				item.IncomeCents += row.Total
+				item.IncomeCount += row.Count
 			case KindExpense:
 				item.ExpenseCents += row.Total
+				item.ExpenseCount += row.Count
 			}
 		}
 		result := make([]dimensionStat, 0, len(order))
@@ -789,35 +839,39 @@ func personalMonthlyTrend(db *gorm.DB, userID uint, year int, ledgerID uint) ([]
 
 func handlePersonalStats(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if _, err := ensurePersonalSetup(db, c.GetUint("userID")); err != nil {
+		ownerID, ok := dataOwner(db, c)
+		if !ok {
+			return
+		}
+		if _, err := ensurePersonalSetup(db, ownerID); err != nil {
 			response.ErrorInternal(c, "统计分析失败")
 			return
 		}
 		ledgerID := uint(utils.Atoi(c.Query("ledger_id"), 0))
 		if ledgerID > 0 {
-			if _, err := ownedPersonalLedger(db, c.GetUint("userID"), ledgerID, false); err != nil {
+			if _, err := ownedPersonalLedger(db, ownerID, ledgerID, false); err != nil {
 				respondPersonalError(c, err, "账本不存在")
 				return
 			}
 		}
-		summary, categories, trend, err := personalStatsForLedger(db, c.GetUint("userID"), c.Query("start"), c.Query("end"), ledgerID)
+		summary, categories, trend, err := personalStatsForLedger(db, ownerID, c.Query("start"), c.Query("end"), ledgerID)
 		if err != nil {
 			response.ErrorInternal(c, "统计分析失败")
 			return
 		}
-		ledgers, tags, daily, weekdays, err := personalDimensions(db, c.GetUint("userID"), c.Query("start"), c.Query("end"), ledgerID)
+		ledgers, tags, daily, weekdays, err := personalDimensions(db, ownerID, c.Query("start"), c.Query("end"), ledgerID)
 		if err != nil {
 			response.ErrorInternal(c, "统计分析失败")
 			return
 		}
 		// The years the user recorded something in feed the year picker of the
 		// statistics page so the quick range never offers an empty year.
-		years, err := personalFlowYears(db, c.GetUint("userID"))
+		years, err := personalFlowYears(db, ownerID)
 		if err != nil {
 			response.ErrorInternal(c, "统计分析失败")
 			return
 		}
-		monthly, err := personalMonthlyTrend(db, c.GetUint("userID"), utils.Atoi(c.Query("trend_year"), 0), ledgerID)
+		monthly, err := personalMonthlyTrend(db, ownerID, utils.Atoi(c.Query("trend_year"), 0), ledgerID)
 		if err != nil {
 			response.ErrorInternal(c, "统计分析失败")
 			return
@@ -828,12 +882,16 @@ func handlePersonalStats(db *gorm.DB) gin.HandlerFunc {
 
 func handleExportPersonal(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if _, err := ensurePersonalSetup(db, c.GetUint("userID")); err != nil {
+		ownerID, ok := dataOwner(db, c)
+		if !ok {
+			return
+		}
+		if _, err := ensurePersonalSetup(db, ownerID); err != nil {
 			response.ErrorInternal(c, "导出账单失败")
 			return
 		}
 		var items []PersonalTransaction
-		if err := personalQuery(db, c.GetUint("userID"), c).Order("occurred_at DESC, id DESC").Find(&items).Error; err != nil {
+		if err := personalQuery(db, ownerID, c).Order("occurred_at DESC, id DESC").Find(&items).Error; err != nil {
 			response.ErrorInternal(c, "导出账单失败")
 			return
 		}

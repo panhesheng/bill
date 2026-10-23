@@ -2,6 +2,14 @@ package database
 
 import "time"
 
+// The roles an account can have.
+const (
+	// RoleAdmin manages the system and every other account.
+	RoleAdmin = "admin"
+	// RoleUser owns its data and may change it freely.
+	RoleUser = "user"
+)
+
 type User struct {
 	ID          uint   `gorm:"primarykey"`
 	Username    string `gorm:"uniqueIndex;not null"`

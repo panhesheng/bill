@@ -14,20 +14,24 @@ import (
 func handleDashboard(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetUint("userID")
-		if _, err := ensurePersonalSetup(db, userID); err != nil {
+		ownerID, ok := dataOwner(db, c)
+		if !ok {
+			return
+		}
+		if _, err := ensurePersonalSetup(db, ownerID); err != nil {
 			response.ErrorInternal(c, "获取首页数据失败")
 			return
 		}
 		now := time.Now()
 		start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
 		end := now.Format("2006-01-02")
-		summary, categories, trend, err := personalStats(db, userID, start, end)
+		summary, categories, trend, err := personalStats(db, ownerID, start, end)
 		if err != nil {
 			response.ErrorInternal(c, "获取首页数据失败")
 			return
 		}
 		var recent []PersonalTransaction
-		if err := db.Where("user_id = ?", userID).Order("occurred_at DESC, id DESC").Limit(5).Find(&recent).Error; err != nil {
+		if err := db.Where("user_id = ?", ownerID).Order("occurred_at DESC, id DESC").Limit(5).Find(&recent).Error; err != nil {
 			response.ErrorInternal(c, "获取首页数据失败")
 			return
 		}
@@ -42,7 +46,7 @@ func handleDashboard(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		var personalLedgers []PersonalLedger
-		if err := db.Where("user_id = ? AND archived = ?", userID, false).Order("sort_order ASC, is_default DESC, created_at ASC").Find(&personalLedgers).Error; err != nil {
+		if err := db.Where("user_id = ? AND archived = ?", ownerID, false).Order("sort_order ASC, is_default DESC, created_at ASC").Find(&personalLedgers).Error; err != nil {
 			response.ErrorInternal(c, "获取首页数据失败")
 			return
 		}

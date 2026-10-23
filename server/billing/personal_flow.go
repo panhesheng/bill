@@ -183,7 +183,10 @@ func flowDay(key string) int {
 // month or day the user asks for, newest period first.
 func handlePersonalFlow(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID := c.GetUint("userID")
+		userID, ok := dataOwner(db, c)
+		if !ok {
+			return
+		}
 		year := utils.Atoi(c.Query("year"), 0)
 		month := utils.Atoi(c.Query("month"), 0)
 		if year < 0 || year > 9999 {

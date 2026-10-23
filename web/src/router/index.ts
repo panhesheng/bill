@@ -33,6 +33,7 @@ const router = createRouter({
         { path: 'personal/ledgers', name: 'MyLedgers', component: () => import('../views/MyLedgersView.vue') },
         { path: 'personal/accounts', name: 'AccountManagement', component: () => import('../views/AccountManagementView.vue') },
         { path: 'personal/settings', name: 'PersonalSettings', component: () => import('../views/PersonalSettingsView.vue') },
+        { path: 'shares', name: 'DataShare', component: () => import('../views/DataShareView.vue') },
         { path: 'analysis', name: 'PersonalAnalysis', component: () => import('../views/PersonalAnalysisView.vue') },
         { path: 'shared', name: 'SharedLedgers', component: () => import('../views/SharedLedgersView.vue') },
         { path: 'shared/:id', name: 'SharedLedgerDetail', component: () => import('../views/SharedLedgerDetailView.vue') },

@@ -2,6 +2,7 @@ package billing
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -342,6 +343,7 @@ func handleUpdateLedger(db *gorm.DB) gin.HandlerFunc {
 			response.ErrorInternal(c, "更新共享账本失败")
 			return
 		}
+		audit.Log(db, c, "shared_ledger_update", "shared_ledger", ledgerID, "修改共享账本")
 		response.Success(c, nil)
 	}
 }
@@ -433,6 +435,7 @@ func handleInviteMember(db *gorm.DB) gin.HandlerFunc {
 			response.ErrorInternal(c, "邀请成员失败")
 			return
 		}
+		audit.Log(db, c, "shared_member_invite", "shared_ledger", ledgerID, "邀请成员加入共享账本")
 		response.Success(c, nil)
 	}
 }
@@ -525,6 +528,7 @@ func handleRemoveMember(db *gorm.DB) gin.HandlerFunc {
 			response.ErrorInternal(c, "移除成员失败")
 			return
 		}
+		audit.Log(db, c, "shared_member_remove", "shared_ledger", ledgerID, fmt.Sprintf("移除共享账本成员 #%d", memberUserID))
 		response.Success(c, nil)
 	}
 }
@@ -778,6 +782,7 @@ func handleUpdateSharedTransaction(db *gorm.DB) gin.HandlerFunc {
 			response.ErrorInternal(c, "更新共享账单失败")
 			return
 		}
+		audit.Log(db, c, "shared_transaction_update", "shared_transaction", transactionID, "修改共享账单")
 		response.Success(c, nil)
 	}
 }
@@ -813,6 +818,7 @@ func handleDeleteSharedTransaction(db *gorm.DB) gin.HandlerFunc {
 			response.ErrorInternal(c, "删除共享账单失败")
 			return
 		}
+		audit.Log(db, c, "shared_transaction_delete", "shared_transaction", transactionID, "删除共享账单")
 		response.Success(c, nil)
 	}
 }
@@ -919,6 +925,7 @@ func handleDeleteSettlement(db *gorm.DB) gin.HandlerFunc {
 			response.ErrorInternal(c, "删除结算记录失败")
 			return
 		}
+		audit.Log(db, c, "settlement_delete", "settlement", settlementID, "删除共享账本结算")
 		response.Success(c, nil)
 	}
 }

@@ -138,7 +138,7 @@
 
         <CategoryChart :mode="categoryMode" :drill="categoryDrill" :rows="categoryRows" empty-text="当前范围暂无分类支出" @update:mode="setCategoryMode" @update:drill="drillCategory" />
         <RankingChart title="账本对比" description="不同账本的支出规模与记录数" :items="ledgerRows" empty-text="当前范围暂无账本数据" value-label="支出" />
-        <RankingChart title="标签排名" description="按标签关联金额从高到低" :items="tagRows" empty-text="当前范围暂无标签数据" value-label="金额" />
+        <RankingChart title="标签排名" :description="tagDescription" :items="tagRows" :tabs="tagTabs" :bar-class="tagBarClass" :empty-text="tagEmptyText" :value-label="tagValueLabel" @update:tab="setTagKind" />
         <RankingChart title="星期分布" description="查看支出集中在一周中的哪些日子" :items="weekdayRows" empty-text="当前范围暂无星期分布" value-label="支出" />
       </div>
     </template>
@@ -148,8 +148,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onMounted, reactive, ref, type PropType } from 'vue'
+import { computed, defineComponent, h, onMounted, reactive, ref, watch, type PropType } from 'vue'
 import { billingApi } from '../api/billing'
+import { useDataShareStore } from '../stores/dataShare'
 import { apiMessage, formatMoney } from '../utils/billing'
 import PageHeader from '../components/PageHeader.vue'
 import Toast from '../components/Toast.vue'
@@ -159,7 +160,7 @@ interface Summary { income_cents: number; expense_cents: number; balance_cents: 
 interface CategoryStat { category: string; parent?: string; amount_cents: number; count: number }
 interface TrendStat { month: string; income_cents: number; expense_cents: number }
 interface LedgerStat { ledger_id?: number; id?: number; ledger_name?: string; name?: string; income_cents: number; expense_cents: number; count: number }
-interface TagStat { tag_id?: number; id?: number; tag?: string; name?: string; amount_cents: number; count: number }
+interface TagStat { tag_id?: number; id?: number; tag?: string; name?: string; amount_cents: number; income_cents?: number; expense_cents?: number; income_count?: number; expense_count?: number; count: number }
 interface DailyStat { date: string; income_cents: number; expense_cents: number }
 interface MonthlyStat { month: string; income_cents: number; expense_cents: number; balance_cents: number; count: number }
 interface WeekdayStat { weekday: number | string; amount_cents: number; count: number }
@@ -177,6 +178,11 @@ interface AnalysisStats {
 interface LedgerOption { id: number; name: string }
 interface TrendPoint { label: string; income_cents: number; expense_cents: number; balance_cents: number }
 interface RankingRow { key: string; label: string; amount_cents: number; count: number; detail?: string }
+// A chart can offer a segmented switch, e.g. the tag ranking separates
+// expense tags from income tags.
+interface RankingTabOption { value: string; label: string; activeClass?: string }
+interface RankingTabs { value: string; options: RankingTabOption[] }
+type TagKind = 'expense' | 'income'
 
 const today = new Date()
 const currentYear = today.getFullYear()
@@ -190,11 +196,15 @@ const errorMessage = ref('')
 const filterError = ref('')
 const categoryMode = ref<'sub' | 'primary'>('sub')
 const categoryDrill = ref('')
+// The tag ranking lists the tags of one direction at a time. Expenses come
+// first because they drive the spending habits this page is about.
+const tagKind = ref<TagKind>('expense')
 // The trend chart summarises a whole year, so it owns its own year picker and
 // is not limited by the date range of the other filters.
 const trendYear = ref(currentYear)
 const ledgerOptions = ref<LedgerOption[]>([])
 const emptySummary = (): Summary => ({ income_cents: 0, expense_cents: 0, balance_cents: 0, count: 0 })
+const shareStore = useDataShareStore()
 const stats = reactive<AnalysisStats>({ summary: emptySummary(), categories: [], trend: [], ledgers: [], tags: [], daily: [], weekdays: [], available_years: [], monthly: [] })
 
 const savingRate = computed(() => stats.summary.income_cents ? Math.round(stats.summary.balance_cents / stats.summary.income_cents * 100) : 0)
@@ -264,7 +274,38 @@ const categoryRows = computed<RankingRow[]>(() => {
   }))
 })
 const ledgerRows = computed(() => stats.ledgers.slice().sort((a, b) => b.expense_cents - a.expense_cents).map((item, index) => ({ key: String(item.ledger_id ?? item.id ?? index), label: item.ledger_name || item.name || '未命名账本', amount_cents: item.expense_cents, count: item.count, detail: item.income_cents ? `收入 ${formatMoney(item.income_cents)}` : undefined })))
-const tagRows = computed(() => stats.tags.slice().sort((a, b) => b.amount_cents - a.amount_cents).map((item, index) => ({ key: String(item.tag_id ?? item.id ?? index), label: item.tag || item.name || '未命名标签', amount_cents: item.amount_cents, count: item.count })))
+const tagRows = computed<RankingRow[]>(() => {
+  const kind = tagKind.value
+  return (stats.tags || [])
+    .map((item, index) => {
+      const rawAmount = kind === 'income' ? item.income_cents : item.expense_cents
+      const rawCount = kind === 'income' ? item.income_count : item.expense_count
+      const opposite = kind === 'income' ? item.expense_cents : item.income_cents
+      return {
+        key: String(item.tag_id ?? item.id ?? index),
+        label: item.tag || item.name || '未命名标签',
+        amount_cents: rawAmount === undefined ? numberValue(item.amount_cents) : numberValue(rawAmount),
+        count: rawCount === undefined ? numberValue(item.count) : numberValue(rawCount),
+        detail: numberValue(opposite) ? `${kind === 'income' ? '支出' : '收入'} ${formatMoney(numberValue(opposite))}` : undefined,
+      }
+    })
+    .filter(item => item.amount_cents > 0 || item.count > 0)
+    .sort((a, b) => b.amount_cents - a.amount_cents || b.count - a.count)
+})
+const tagTabs = computed<RankingTabs>(() => ({
+  value: tagKind.value,
+  options: [
+    { value: 'expense', label: '支出', activeClass: 'bg-rose-600 text-white dark:bg-rose-500/20 dark:text-rose-100' },
+    { value: 'income', label: '收入', activeClass: 'bg-emerald-600 text-white dark:bg-emerald-500/20 dark:text-emerald-100' },
+  ],
+}))
+const tagDescription = computed(() => tagKind.value === 'expense' ? '按标签关联的支出金额从高到低' : '按标签关联的收入金额从高到低')
+const tagValueLabel = computed(() => tagKind.value === 'expense' ? '支出' : '收入')
+const tagEmptyText = computed(() => tagKind.value === 'expense' ? '当前范围暂无支出标签数据' : '当前范围暂无收入标签数据')
+const tagBarClass = computed(() => tagKind.value === 'expense' ? 'bg-rose-600 dark:bg-rose-500' : 'bg-emerald-600 dark:bg-emerald-500')
+function setTagKind(kind: string) {
+  tagKind.value = kind === 'income' ? 'income' : 'expense'
+}
 const weekdayRows = computed(() => stats.weekdays.filter(item => item.amount_cents > 0 || item.count > 0).map((item, index) => ({ key: String(item.weekday ?? index), label: weekdayLabel(item.weekday), amount_cents: item.amount_cents, count: item.count })).sort((a, b) => b.amount_cents - a.amount_cents))
 
 const chart = { width: 720, height: 280, left: 72, right: 18, top: 32, bottom: 42 }
@@ -448,7 +489,7 @@ async function load() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const params = { start: applied.start, end: applied.end, ledger_id: applied.ledger_id || undefined, trend_year: trendYear.value }
+    const params = { start: applied.start, end: applied.end, ledger_id: applied.ledger_id || undefined, trend_year: trendYear.value, ...shareStore.ownerParam }
     const response = await billingApi.personalStats(params)
     const next = normalize(response.data.data as Partial<AnalysisStats>)
     Object.assign(stats, next)
@@ -515,19 +556,31 @@ const RankingChart = defineComponent({
   props: {
     title: { type: String, required: true }, description: { type: String, required: true },
     items: { type: Array as PropType<RankingRow[]>, required: true }, emptyText: { type: String, required: true }, valueLabel: { type: String, required: true },
+    tabs: { type: Object as PropType<RankingTabs | undefined>, default: undefined },
+    barClass: { type: String, default: 'bg-brand-600 dark:bg-accent' },
   },
-  setup(props) {
+  emits: ['update:tab'],
+  setup(props, { emit }) {
     return () => {
       const max = Math.max(1, ...props.items.map(item => item.amount_cents))
+      const tabs = props.tabs
+      const switcher = tabs
+        ? h('div', { class: 'inline-flex shrink-0 items-center gap-1 rounded-full border border-border p-0.5 text-xs font-semibold' }, tabs.options.map(option => h('button', {
+          type: 'button',
+          class: ['rounded-full px-3 py-1.5 transition-colors', tabs.value === option.value ? (option.activeClass || 'bg-brand-800 text-white dark:bg-accent dark:text-brand-900') : 'text-muted-foreground hover:text-foreground'],
+          'aria-pressed': tabs.value === option.value ? 'true' : 'false',
+          onClick: () => emit('update:tab', option.value),
+        }, option.label)))
+        : null
       return h('section', { class: 'surface rounded-2xl p-4 sm:p-6', 'aria-label': props.title }, [
-        h(ChartHeading, { id: `chart-${props.title}`, title: props.title, description: props.description }),
+        h('div', { class: 'flex flex-wrap items-start justify-between gap-3' }, [h(ChartHeading, { id: `chart-${props.title}`, title: props.title, description: props.description }), switcher]),
         props.items.length ? h('div', { class: 'mt-6 space-y-5' }, props.items.map((item, index) => h('div', { key: item.key }, [
           h('div', { class: 'mb-2 flex items-start justify-between gap-3 text-sm' }, [
             h('div', { class: 'min-w-0' }, [h('span', { class: 'block truncate font-semibold' }, `${index + 1}. ${item.label}`), item.detail ? h('span', { class: 'mt-0.5 block text-xs text-muted-foreground' }, item.detail) : null]),
             h('span', { class: 'shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground' }, `${formatMoney(item.amount_cents)} · ${item.count} 笔`),
           ]),
           h('div', { class: 'h-2.5 overflow-hidden rounded-full bg-muted', role: 'img', 'aria-label': `${item.label}，${props.valueLabel}${formatMoney(item.amount_cents)}，${item.count} 笔` }, [
-            h('div', { class: ['h-full rounded-full bg-brand-600 dark:bg-accent', index % 3 === 1 ? 'opacity-75' : index % 3 === 2 ? 'opacity-55' : ''], style: { width: `${Math.max(2, item.amount_cents / max * 100)}%` } }),
+            h('div', { class: ['h-full rounded-full', props.barClass, index % 3 === 1 ? 'opacity-75' : index % 3 === 2 ? 'opacity-55' : ''], style: { width: `${Math.max(2, item.amount_cents / max * 100)}%` } }),
           ]),
         ]))) : h('div', { class: 'empty-state h-64' }, [h(EmptyChartIcon), h('span', { class: 'mt-3' }, props.emptyText)]),
         props.items.length ? h('table', { class: 'sr-only' }, [h('caption', `${props.title}数据`), h('thead', [h('tr', [h('th', { scope: 'col' }, '项目'), h('th', { scope: 'col' }, props.valueLabel), h('th', { scope: 'col' }, '笔数')])]), h('tbody', props.items.map(item => h('tr', { key: `table-${item.key}` }, [h('th', { scope: 'row' }, item.label), h('td', formatMoney(item.amount_cents)), h('td', String(item.count))])))]) : null,

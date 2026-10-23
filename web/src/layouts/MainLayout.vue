@@ -24,6 +24,7 @@
         <div class="sidebar-muted px-3 pb-2 pt-6 font-mono text-[10px] font-semibold uppercase tracking-[0.18em]">记账设置</div>
         <RouterLink to="/admin/personal/accounts" :class="isActive('/admin/personal/accounts') ? 'nav-link-active' : 'nav-link-idle'" class="nav-link"><span class="nav-icon" v-html="accountIcon"></span><span>账户管理</span></RouterLink>
         <RouterLink to="/admin/personal/settings" :class="isActive('/admin/personal/settings') ? 'nav-link-active' : 'nav-link-idle'" class="nav-link"><span class="nav-icon" v-html="categoryIcon"></span><span>分类与标签</span></RouterLink>
+        <RouterLink to="/admin/shares" :class="isActive('/admin/shares') ? 'nav-link-active' : 'nav-link-idle'" class="nav-link"><span class="nav-icon" v-html="shareIcon"></span><span>数据共享</span></RouterLink>
         <RouterLink to="/admin/settings" :class="isActive('/admin/settings') ? 'nav-link-active' : 'nav-link-idle'" class="nav-link"><span class="nav-icon" v-html="settingsIcon"></span><span>偏好设置</span></RouterLink>
         <template v-if="authStore.isAdmin">
           <div class="sidebar-muted px-3 pb-2 pt-6 font-mono text-[10px] font-semibold uppercase tracking-[0.18em]">系统管理</div>
@@ -34,7 +35,7 @@
       <div class="sidebar-profile rounded-[1.25rem] border p-3">
         <div class="flex items-center gap-3">
           <span class="avatar">{{ userInitial }}</span>
-          <div class="min-w-0 flex-1"><div class="truncate text-sm font-bold">{{ authStore.user?.username }}</div><div class="sidebar-muted text-xs">{{ authStore.isAdmin ? '管理员' : '普通用户' }}</div></div>
+          <div class="min-w-0 flex-1"><div class="truncate text-sm font-bold">{{ authStore.user?.username }}</div><div class="sidebar-muted text-xs">{{ roleLabel }}</div></div>
           <button class="sidebar-logout icon-button" aria-label="退出登录" @click="logout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 17l5-5-5-5m5 5H3m10-9h6v18h-6"/></svg></button>
         </div>
         <div v-if="versionInfo" class="sidebar-version mt-3 border-t pt-2 text-center font-mono text-[9px] uppercase tracking-wider">{{ versionInfo }}</div>
@@ -48,14 +49,28 @@
           <div class="min-w-0"><p class="hidden font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground lg:block">Bill Ledger</p><h1 class="truncate font-display text-lg font-extrabold tracking-tight">{{ currentTitle }}</h1></div>
         </div>
         <div class="flex items-center gap-2">
+          <label v-if="shareStore.owners.length" class="hidden items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-semibold sm:flex">
+            <span class="text-muted-foreground">数据源</span>
+            <select :value="shareStore.currentOwnerId" class="min-h-8 rounded-full bg-transparent pr-1 text-xs font-bold outline-none" aria-label="选择数据源" @change="onOwnerChange">
+              <option :value="0">我的数据</option>
+              <option v-for="owner in shareStore.owners" :key="owner.user_id" :value="owner.user_id">{{ owner.username }} 的数据</option>
+            </select>
+          </label>
           <UiThemeToggle />
           <div ref="menuRef" class="relative lg:hidden">
             <button class="flex min-h-11 items-center gap-2 rounded-full px-1.5 transition-colors hover:bg-muted" :aria-expanded="menuOpen" aria-haspopup="menu" aria-label="打开用户菜单" @click.stop="menuOpen = !menuOpen"><span class="avatar h-9 w-9">{{ userInitial }}</span><svg class="h-4 w-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m6 9 6 6 6-6"/></svg></button>
             <Transition enter-active-class="transition duration-150" enter-from-class="scale-95 opacity-0" leave-active-class="transition duration-100" leave-to-class="scale-95 opacity-0">
               <div v-if="menuOpen" class="absolute right-0 mt-2 w-52 origin-top-right rounded-xl border border-border bg-surface p-2 shadow-xl">
+                <label v-if="shareStore.owners.length" class="mb-1 block px-3 py-2 text-xs font-semibold text-muted-foreground">数据源
+                  <select :value="shareStore.currentOwnerId" class="mt-1.5 min-h-10 w-full rounded-xl border border-border bg-surface px-2 text-sm font-bold outline-none" aria-label="选择数据源" @change="onOwnerChange">
+                    <option :value="0">我的数据</option>
+                    <option v-for="owner in shareStore.owners" :key="owner.user_id" :value="owner.user_id">{{ owner.username }} 的数据</option>
+                  </select>
+                </label>
                 <RouterLink to="/admin/profile" class="menu-item" @click="menuOpen = false">个人资料</RouterLink>
                 <RouterLink to="/admin/personal/accounts" class="menu-item" @click="menuOpen = false">账户管理</RouterLink>
                 <RouterLink to="/admin/personal/settings" class="menu-item" @click="menuOpen = false">分类与标签</RouterLink>
+                <RouterLink to="/admin/shares" class="menu-item" @click="menuOpen = false">数据共享</RouterLink>
                 <RouterLink to="/admin/settings" class="menu-item" @click="menuOpen = false">偏好设置</RouterLink>
                 <template v-if="authStore.isAdmin"><div class="my-1 border-t border-border"></div><RouterLink to="/admin/users" class="menu-item" @click="menuOpen = false">用户管理</RouterLink><RouterLink to="/admin/configs" class="menu-item" @click="menuOpen = false">系统配置</RouterLink><RouterLink to="/admin/audit" class="menu-item" @click="menuOpen = false">操作日志</RouterLink></template>
                 <div class="my-1 border-t border-border"></div><button class="menu-item w-full text-rose-600" @click="logout">退出登录</button>
@@ -66,6 +81,10 @@
       </header>
 
       <main id="main-content" ref="mainRef" tabindex="-1" class="min-w-0 w-full overflow-x-clip p-3 pb-28 outline-none lg:p-10 lg:pb-10">
+        <div v-if="shareStore.isSharedView" class="mb-4 flex items-start gap-2 rounded-xl border border-sky-300/70 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+          <svg class="mt-0.5 h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17 20h5v-2a3 3 0 00-5.4-1.8M17 20H7m10 0v-2c0-.7-.1-1.3-.4-1.8M7 20H2v-2a3 3 0 015.4-1.8M7 20v-2c0-.7.1-1.3.4-1.8m0 0a5 5 0 019.2 0M15 7a3 3 0 11-6 0 3 3 0 016 0Z"/></svg>
+          <p>正在查看 <strong>{{ shareStore.currentOwnerName }}</strong> 共享给你的数据。</p>
+        </div>
         <!-- 赞赏横幅：管理员可见，每个版本只出现一次；文档流内展示，不遮挡页面内容 -->
 <!--        <div v-if="showDonateBanner" class="mb-4 flex items-center justify-between gap-3 rounded-xl bg-gradient-to-r from-brand-600 to-brand-800 px-4 py-2.5 text-sm text-white shadow-md">-->
 <!--          <span>☕ 账单应用免费、无广告、数据都在你自己的设备上。如果它帮到了你，欢迎请站长喝杯咖啡——1 元也是心意，完全自愿，不影响任何功能。</span>-->
@@ -103,6 +122,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useDataShareStore } from '../stores/dataShare'
 import { getVersion } from '../api/config'
 import UiThemeToggle from '../components/ui/ThemeToggle.vue'
 import Modal from '../components/Modal.vue'
@@ -115,6 +135,7 @@ const analysisIcon = '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"
 const settingsIcon = '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M8 12h12M4 18h16M8 4v4m8 2v4m-8 2v4"/></svg>'
 const categoryIcon = '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10v6H4V5.5ZM14 4h4.5A1.5 1.5 0 0 1 20 5.5V10h-6V4ZM4 14h6v6H5.5A1.5 1.5 0 0 1 4 18.5V14Zm10 0h6v4.5a1.5 1.5 0 0 1-1.5 1.5H14v-6Z"/></svg>'
 const accountIcon = '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18v11H3zM3 10h18m-14 5h4"/></svg>'
+const shareIcon = '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="M17 20h5v-2a3 3 0 0 0-5.4-1.8M17 20H7m10 0v-2c0-.7-.1-1.3-.4-1.8M7 20H2v-2a3 3 0 0 1 5.4-1.8M7 20v-2c0-.7.1-1.3.4-1.8m0 0a5 5 0 0 1 9.2 0M15 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>'
 const mainNav = [{ to: '/admin/personal/ledgers', label: '我的账本', icon: ledgersIcon }, { to: '/admin/shared', label: '共享账本', icon: sharedIcon }, { to: '/admin/personal', label: '我的账单', icon: billsIcon }, { to: '/admin/analysis', label: '统计分析', icon: analysisIcon }]
 const mobileNav = mainNav.map(item => ({ ...item, mobileLabel: item.label === '我的账单' ? '账单' : item.label === '我的账本' ? '账本' : item.label === '共享账本' ? '共享' : '统计' }))
 const adminNav = [
@@ -175,9 +196,14 @@ const onSupportConfirmed = () => {
   showSupportModal.value = false
 }
 
-const titleMap: Record<string, string> = { '/admin': '总览', '/admin/personal': '我的账单', '/admin/personal/ledgers': '我的账本', '/admin/personal/accounts': '账户管理', '/admin/personal/settings': '分类与标签', '/admin/shared': '共享账本', '/admin/analysis': '统计分析', '/admin/profile': '个人资料', '/admin/settings': '偏好设置', '/admin/users': '用户管理', '/admin/configs': '系统配置', '/admin/audit': '操作日志' }
+const titleMap: Record<string, string> = { '/admin': '总览', '/admin/shares': '数据共享', '/admin/personal': '我的账单', '/admin/personal/ledgers': '我的账本', '/admin/personal/accounts': '账户管理', '/admin/personal/settings': '分类与标签', '/admin/shared': '共享账本', '/admin/analysis': '统计分析', '/admin/profile': '个人资料', '/admin/settings': '偏好设置', '/admin/users': '用户管理', '/admin/configs': '系统配置', '/admin/audit': '操作日志' }
 const currentTitle = computed(() => route.path.startsWith('/admin/shared/') ? '共享账本详情' : titleMap[route.path] || '账单')
 const userInitial = computed(() => (authStore.user?.username || 'U').charAt(0).toUpperCase())
+const roleLabel = computed(() => authStore.isAdmin ? '管理员' : '普通用户')
+const shareStore = useDataShareStore()
+function onOwnerChange(event: Event) {
+  shareStore.selectOwner(Number((event.target as HTMLSelectElement).value))
+}
 const todayText = computed(() => new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date()))
 function isActive(to: string) { if (to === '/admin') return route.path === '/admin'; if (to === '/admin/personal') return route.path === to; return route.path.startsWith(to) }
 function logout() { menuOpen.value = false; authStore.logout(); router.push('/login') }
@@ -188,6 +214,7 @@ watch(() => authStore.isAuthenticated && !authStore.hasSecurityQuestions && !aut
 watch(() => route.fullPath, async () => { menuOpen.value = false; await nextTick(); mainRef.value?.focus({ preventScroll: true }) })
 onMounted(async () => {
   document.addEventListener('click', onClickOutside)
+  shareStore.refresh()
   try {
     const res = await getVersion()
     const data = res.data?.data

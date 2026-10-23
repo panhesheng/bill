@@ -158,6 +158,23 @@ export interface FlowEntry {
   count: number
 }
 
+export interface DataShareViewer {
+  id: number
+  user_id: number
+  username: string
+  created_at: string
+}
+
+export interface DataShareOwner {
+  user_id: number
+  username: string
+}
+
+export interface PersonalShares {
+  viewers: DataShareViewer[]
+  owners: DataShareOwner[]
+}
+
 export interface PersonalFlow {
   granularity: 'year' | 'month' | 'day'
   year: number
@@ -296,7 +313,7 @@ export interface SharedPayload {
 }
 
 export const billingApi = {
-  dashboard: () => request.get('/api/billing/dashboard'),
+  dashboard: (ownerId = 0) => request.get('/api/billing/dashboard', { params: ownerId ? { owner_id: ownerId } : {} }),
   users: (q = '') => request.get('/api/billing/users', { params: { q } }),
 
   personalList: (params: Record<string, unknown>) => request.get('/api/billing/personal/transactions', { params }),
@@ -305,16 +322,19 @@ export const billingApi = {
   personalDelete: (id: number) => request.delete(`/api/billing/personal/transactions/${id}`),
   personalRefundableTransactions: (params: { ledger_id?: number; keyword?: string; limit?: number } = {}) => request.get('/api/billing/personal/refundable-transactions', { params }),
   personalStats: (params: Record<string, unknown> = {}) => request.get('/api/billing/personal/stats', { params }),
-  personalFlow: (params: { year?: number; month?: number; ledger_id?: number } = {}) => request.get('/api/billing/personal/flow', { params }),
+  personalFlow: (params: { year?: number; month?: number; ledger_id?: number; owner_id?: number } = {}) => request.get('/api/billing/personal/flow', { params }),
   personalExport: (params: Record<string, unknown> = {}) => request.get('/api/billing/personal/export', { params, responseType: 'blob' }),
-  personalAccounts: (includeArchived = false) => request.get('/api/billing/personal/accounts', { params: includeArchived ? { include_archived: true } : {} }),
+  personalShares: () => request.get('/api/billing/personal/shares'),
+  personalShareCreate: (data: { user_id?: number; username?: string }) => request.post('/api/billing/personal/shares', data),
+  personalShareDelete: (id: number) => request.delete(`/api/billing/personal/shares/${id}`),
+  personalAccounts: (includeArchived = false, ownerId = 0) => request.get('/api/billing/personal/accounts', { params: { ...(includeArchived ? { include_archived: true } : {}), ...(ownerId ? { owner_id: ownerId } : {}) } }),
   personalAccountOptions: () => request.get('/api/billing/personal/account-options'),
   personalAccountCreate: (data: PersonalAccountPayload) => request.post('/api/billing/personal/accounts', data),
   personalAccountUpdate: (id: number, data: PersonalAccountPayload) => request.put(`/api/billing/personal/accounts/${id}`, data),
   personalAccountArchive: (id: number) => request.delete(`/api/billing/personal/accounts/${id}`),
   personalAccountDelete: (id: number) => request.delete(`/api/billing/personal/accounts/${id}/permanent`),
   personalAccountRestore: (id: number) => request.post(`/api/billing/personal/accounts/${id}/restore`),
-  personalLedgers: (includeArchived = false) => request.get('/api/billing/personal/ledgers', { params: includeArchived ? { include_archived: true } : {} }),
+  personalLedgers: (includeArchived = false, ownerId = 0) => request.get('/api/billing/personal/ledgers', { params: { ...(includeArchived ? { include_archived: true } : {}), ...(ownerId ? { owner_id: ownerId } : {}) } }),
   personalLedgerCreate: (data: { name: string; currency: string; cover?: string }) => request.post('/api/billing/personal/ledgers', data),
   personalLedgerUpdate: (id: number, data: { name: string; currency: string; cover?: string }) => request.put(`/api/billing/personal/ledgers/${id}`, data),
   personalLedgerOrder: (ledgerIds: number[]) => request.put('/api/billing/personal/ledgers/order', { ledger_ids: ledgerIds }),
@@ -326,11 +346,11 @@ export const billingApi = {
     form.append('file', file)
     return request.post('/api/upload', form)
   },
-  personalCategories: () => request.get('/api/billing/personal/categories'),
+  personalCategories: (ownerId = 0) => request.get('/api/billing/personal/categories', { params: ownerId ? { owner_id: ownerId } : {} }),
   personalCategoryCreate: (data: { name: string; kind: BillKind; parent_id: number }) => request.post('/api/billing/personal/categories', data),
   personalCategoryUpdate: (id: number, data: { name: string; kind: BillKind; parent_id: number }) => request.put(`/api/billing/personal/categories/${id}`, data),
   personalCategoryDelete: (id: number) => request.delete(`/api/billing/personal/categories/${id}`),
-  personalTags: () => request.get('/api/billing/personal/tags'),
+  personalTags: (ownerId = 0) => request.get('/api/billing/personal/tags', { params: ownerId ? { owner_id: ownerId } : {} }),
   personalTagCreate: (data: { name: string }) => request.post('/api/billing/personal/tags', data),
   personalTagUpdate: (id: number, data: { name: string }) => request.put(`/api/billing/personal/tags/${id}`, data),
   personalTagDelete: (id: number) => request.delete(`/api/billing/personal/tags/${id}`),

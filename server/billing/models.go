@@ -35,6 +35,17 @@ const (
 	RefundCategory = "退款"
 )
 
+// DataShare lets the owner of a personal account let another user look at
+// the data. The share is one way: the owner decides who may read, and the
+// viewer keeps full control over the data of its own account. Every write
+// still targets the data of the account that performs it.
+type DataShare struct {
+	ID        uint      `gorm:"primarykey" json:"id"`
+	OwnerID   uint      `gorm:"not null;uniqueIndex:idx_data_share_owner_viewer" json:"owner_id"`
+	ViewerID  uint      `gorm:"not null;uniqueIndex:idx_data_share_owner_viewer" json:"viewer_id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // PersonalTransaction is an income or expense owned by exactly one user.
 // AmountCents is always positive; Kind determines the direction.
 // KindTransfer moves money from AccountID to CounterpartAccountID and is

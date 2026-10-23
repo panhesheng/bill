@@ -22,6 +22,7 @@ func init() {
 		&SharedTransaction{},
 		&SharedShare{},
 		&Settlement{},
+		&DataShare{},
 	)
 	database.RegisterUserDeleteGuard(hasBillingData)
 	database.RegisterUserDeleteCleanup(cleanupBillingUserData)
@@ -37,6 +38,10 @@ func init() {
 
 func cleanupBillingUserData(db *gorm.DB, userID uint) error {
 	if err := db.Where("user_id = ? AND is_default = ?", userID, true).Delete(&PersonalCategory{}).Error; err != nil {
+		return err
+	}
+	// The shares of a deleted user disappear with it.
+	if err := db.Where("owner_id = ? OR viewer_id = ?", userID, userID).Delete(&DataShare{}).Error; err != nil {
 		return err
 	}
 	return db.Where("user_id = ? AND is_default = ?", userID, true).Delete(&PersonalLedger{}).Error
@@ -104,6 +109,9 @@ func setupRoutes(api *gin.RouterGroup, db *gorm.DB) {
 	group.PUT("/personal/categories/:id", handleUpdatePersonalCategory(db))
 	group.DELETE("/personal/categories/:id", handleDeletePersonalCategory(db))
 	group.GET("/personal/tags", handleListPersonalTags(db))
+	group.GET("/personal/shares", handleListPersonalShares(db))
+	group.POST("/personal/shares", handleCreatePersonalShare(db))
+	group.DELETE("/personal/shares/:id", handleDeletePersonalShare(db))
 	group.POST("/personal/tags", handleCreatePersonalTag(db))
 	group.PUT("/personal/tags/:id", handleUpdatePersonalTag(db))
 	group.DELETE("/personal/tags/:id", handleDeletePersonalTag(db))

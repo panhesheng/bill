@@ -17,7 +17,7 @@
         </h1>
       </div>
       <div class="flex w-full gap-2 sm:w-auto">
-        <button class="btn-brand min-h-12 flex-1 sm:flex-none" @click="showQuickEntry = true">
+        <button v-if="!shareStore.isSharedView" class="btn-brand min-h-12 flex-1 sm:flex-none" @click="showQuickEntry = true">
           <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v12m6-6H6"/></svg>
           记一笔
         </button>
@@ -51,7 +51,7 @@
               <p class="balance-title text-sm font-bold">从第一笔开始建立你的财务轨迹</p>
               <p class="balance-kicker mt-1 text-xs">记录后，收支趋势和分类统计会自动生成。</p>
             </div>
-            <button class="inline-flex min-h-11 items-center gap-2 rounded-full bg-accent px-4 text-sm font-bold text-brand-900 transition-opacity hover:opacity-90 active:opacity-75" @click="showQuickEntry = true">
+            <button v-if="!shareStore.isSharedView" class="inline-flex min-h-11 items-center gap-2 rounded-full bg-accent px-4 text-sm font-bold text-brand-900 transition-opacity hover:opacity-90 active:opacity-75" @click="showQuickEntry = true">
               开始记账
               <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 18 6-6-6-6"/></svg>
             </button>
@@ -235,16 +235,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { billingApi, type FlowEntry, type LedgerListItem, type PersonalTransaction, type StatsSummary } from '../api/billing'
 import { useAuthStore } from '../stores/auth'
+import { useDataShareStore } from '../stores/dataShare'
 import { apiMessage, formatDate, formatMoney } from '../utils/billing'
 import CategoryIcon from '../components/billing/CategoryIcon.vue'
 import QuickPersonalEntryModal from '../components/billing/QuickPersonalEntryModal.vue'
 import Toast from '../components/Toast.vue'
 
 const authStore = useAuthStore()
+const shareStore = useDataShareStore()
 const loading = ref(true)
 const showQuickEntry = ref(false)
 const toast = reactive<{ message: string; type: 'success' | 'error' }>({ message: '', type: 'success' })
@@ -300,7 +302,7 @@ const savingsRate = computed(() => {
 async function loadDashboard() {
   loading.value = true
   try {
-    const response = await billingApi.dashboard()
+    const response = await billingApi.dashboard(shareStore.currentOwnerId)
     const data = response.data.data
     monthSummary.value = data.month.summary
     recent.value = data.recent || []
@@ -317,7 +319,7 @@ async function loadDashboard() {
 async function loadFlow() {
   flowLoading.value = true
   try {
-    const response = await billingApi.personalFlow({ year: flowYear.value, month: flowMonth.value })
+    const response = await billingApi.personalFlow({ year: flowYear.value, month: flowMonth.value, ...shareStore.ownerParam })
     const data = response.data?.data
     flowEntries.value = data?.entries || []
     const years = data?.available_years || []
@@ -374,6 +376,7 @@ function recentTitle(item: PersonalTransaction) {
   return item.category
 }
 
+watch(() => shareStore.currentOwnerId, () => { loadDashboard(); loadFlow() })
 onMounted(loadDashboard)
 </script>
 

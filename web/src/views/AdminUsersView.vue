@@ -215,6 +215,7 @@ const resetNewPassword = ref('')
 const resetLoading = ref(false)
 const resetMsg = ref('')
 
+
 const avatarPalette = [
   'bg-brand-700',
   'bg-emerald-700',

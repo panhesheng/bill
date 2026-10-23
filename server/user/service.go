@@ -271,7 +271,7 @@ func GetAllUsers(db *gorm.DB, page int, pageSize int, search string) ([]UserResp
 func UpdateUser(db *gorm.DB, userID uint, role *string, status *int) error {
 	updates := map[string]interface{}{}
 	if role != nil {
-		if *role != "admin" && *role != "user" {
+		if *role != database.RoleAdmin && *role != database.RoleUser {
 			return fmt.Errorf("无效的角色")
 		}
 		updates["role"] = *role

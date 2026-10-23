@@ -186,11 +186,15 @@ func ownedPersonalLedger(db *gorm.DB, userID, ledgerID uint, writable bool) (Per
 
 func handleListPersonalLedgers(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if _, err := ensurePersonalSetup(db, c.GetUint("userID")); err != nil {
+		ownerID, ok := dataOwner(db, c)
+		if !ok {
+			return
+		}
+		if _, err := ensurePersonalSetup(db, ownerID); err != nil {
 			response.ErrorInternal(c, "获取账本失败")
 			return
 		}
-		query := db.Where("user_id = ?", c.GetUint("userID"))
+		query := db.Where("user_id = ?", ownerID)
 		if c.Query("include_archived") != "true" {
 			query = query.Where("archived = ?", false)
 		}
@@ -200,7 +204,7 @@ func handleListPersonalLedgers(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		for i := range items {
-			if err := db.Model(&PersonalTransaction{}).Where("user_id = ? AND ledger_id = ?", c.GetUint("userID"), items[i].ID).Count(&items[i].TransactionCount).Error; err != nil {
+			if err := db.Model(&PersonalTransaction{}).Where("user_id = ? AND ledger_id = ?", ownerID, items[i].ID).Count(&items[i].TransactionCount).Error; err != nil {
 				response.ErrorInternal(c, "获取账本失败")
 				return
 			}
@@ -255,6 +259,7 @@ func handleCreatePersonalLedger(db *gorm.DB) gin.HandlerFunc {
 			response.ErrorBadRequest(c, "账本名称已存在")
 			return
 		}
+		audit.Log(db, c, "personal_ledger_create", "personal_ledger", item.ID, "新增个人账本")
 		response.Success(c, item)
 	}
 }
@@ -300,6 +305,7 @@ func handleUpdatePersonalLedger(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		db.First(&ledger, ledger.ID)
+		audit.Log(db, c, "personal_ledger_update", "personal_ledger", ledger.ID, "修改个人账本")
 		response.Success(c, ledger)
 	}
 }
@@ -381,6 +387,7 @@ func handleArchivePersonalLedger(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		ledger.Archived = true
+		audit.Log(db, c, "personal_ledger_archive", "personal_ledger", ledger.ID, "归档个人账本")
 		response.Success(c, ledger)
 	}
 }
@@ -408,6 +415,7 @@ func handleRestorePersonalLedger(db *gorm.DB) gin.HandlerFunc {
 		}
 		ledger.Archived = false
 		ledger.SortOrder = maxOrder + 1
+		audit.Log(db, c, "personal_ledger_restore", "personal_ledger", ledger.ID, "恢复个人账本")
 		response.Success(c, ledger)
 	}
 }
@@ -458,11 +466,15 @@ type personalCategoryRequest struct {
 
 func handleListPersonalCategories(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if _, err := ensurePersonalSetup(db, c.GetUint("userID")); err != nil {
+		ownerID, ok := dataOwner(db, c)
+		if !ok {
+			return
+		}
+		if _, err := ensurePersonalSetup(db, ownerID); err != nil {
 			response.ErrorInternal(c, "获取分类失败")
 			return
 		}
-		query := db.Where("user_id = ?", c.GetUint("userID"))
+		query := db.Where("user_id = ?", ownerID)
 		if validKind(c.Query("kind")) {
 			query = query.Where("kind = ?", c.Query("kind"))
 		}
@@ -554,6 +566,7 @@ func handleCreatePersonalCategory(db *gorm.DB) gin.HandlerFunc {
 			response.ErrorBadRequest(c, "分类已存在")
 			return
 		}
+		audit.Log(db, c, "personal_category_create", "personal_category", item.ID, "新增分类")
 		response.Success(c, item)
 	}
 }
@@ -622,6 +635,7 @@ func handleUpdatePersonalCategory(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		db.First(&current, current.ID)
+		audit.Log(db, c, "personal_category_update", "personal_category", current.ID, "修改分类")
 		response.Success(c, current)
 	}
 }
@@ -652,6 +666,7 @@ func handleDeletePersonalCategory(db *gorm.DB) gin.HandlerFunc {
 			response.ErrorInternal(c, "删除分类失败")
 			return
 		}
+		audit.Log(db, c, "personal_category_delete", "personal_category", current.ID, "删除分类")
 		response.Success(c, nil)
 	}
 }
@@ -662,13 +677,17 @@ type personalTagRequest struct {
 
 func handleListPersonalTags(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		ownerID, ok := dataOwner(db, c)
+		if !ok {
+			return
+		}
 		var items []PersonalTag
-		if err := db.Where("user_id = ?", c.GetUint("userID")).Order("name ASC").Find(&items).Error; err != nil {
+		if err := db.Where("user_id = ?", ownerID).Order("name ASC").Find(&items).Error; err != nil {
 			response.ErrorInternal(c, "获取标签失败")
 			return
 		}
 		for i := range items {
-			if err := db.Table("personal_transaction_tags").Joins("JOIN personal_transactions ON personal_transactions.id = personal_transaction_tags.transaction_id").Where("personal_transaction_tags.tag_id = ? AND personal_transactions.user_id = ?", items[i].ID, c.GetUint("userID")).Count(&items[i].TransactionCount).Error; err != nil {
+			if err := db.Table("personal_transaction_tags").Joins("JOIN personal_transactions ON personal_transactions.id = personal_transaction_tags.transaction_id").Where("personal_transaction_tags.tag_id = ? AND personal_transactions.user_id = ?", items[i].ID, ownerID).Count(&items[i].TransactionCount).Error; err != nil {
 				response.ErrorInternal(c, "获取标签失败")
 				return
 			}
@@ -693,6 +712,7 @@ func handleCreatePersonalTag(db *gorm.DB) gin.HandlerFunc {
 			response.ErrorBadRequest(c, "标签已存在")
 			return
 		}
+		audit.Log(db, c, "personal_tag_create", "personal_tag", item.ID, "新增标签")
 		response.Success(c, item)
 	}
 }
@@ -723,6 +743,7 @@ func handleUpdatePersonalTag(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		item.Name = name
+		audit.Log(db, c, "personal_tag_update", "personal_tag", item.ID, "修改标签")
 		response.Success(c, item)
 	}
 }
@@ -747,6 +768,7 @@ func handleDeletePersonalTag(db *gorm.DB) gin.HandlerFunc {
 			response.ErrorInternal(c, "删除标签失败")
 			return
 		}
+		audit.Log(db, c, "personal_tag_delete", "personal_tag", item.ID, "删除标签")
 		response.Success(c, nil)
 	}
 }

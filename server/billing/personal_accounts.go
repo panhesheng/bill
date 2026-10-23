@@ -302,7 +302,11 @@ func personalAccountBalances(db *gorm.DB, userID uint) (map[uint]int64, error) {
 
 func handleListPersonalAccounts(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		query := db.Where("user_id = ?", c.GetUint("userID"))
+		ownerID, ok := dataOwner(db, c)
+		if !ok {
+			return
+		}
+		query := db.Where("user_id = ?", ownerID)
 		if c.Query("include_archived") != "true" {
 			query = query.Where("archived = ?", false)
 		}
@@ -311,8 +315,7 @@ func handleListPersonalAccounts(db *gorm.DB) gin.HandlerFunc {
 			response.ErrorInternal(c, "获取账户失败")
 			return
 		}
-		userID := c.GetUint("userID")
-		balances, err := personalAccountBalances(db, userID)
+		balances, err := personalAccountBalances(db, ownerID)
 		if err != nil {
 			response.ErrorInternal(c, "获取账户失败")
 			return
@@ -320,7 +323,7 @@ func handleListPersonalAccounts(db *gorm.DB) gin.HandlerFunc {
 		// Accounts used by a shared bill are referenced as well and cannot be
 		// deleted either.
 		var sharedAccountIDs []uint
-		if err := db.Model(&SharedTransaction{}).Where("actor_user_id = ? AND account_id > 0", userID).Distinct().Pluck("account_id", &sharedAccountIDs).Error; err != nil {
+		if err := db.Model(&SharedTransaction{}).Where("actor_user_id = ? AND account_id > 0", ownerID).Distinct().Pluck("account_id", &sharedAccountIDs).Error; err != nil {
 			response.ErrorInternal(c, "获取账户失败")
 			return
 		}
@@ -329,7 +332,7 @@ func handleListPersonalAccounts(db *gorm.DB) gin.HandlerFunc {
 			sharedAccounts[accountID] = true
 		}
 		for i := range items {
-			if err := db.Model(&PersonalTransaction{}).Where("user_id = ? AND (account_id = ? OR counterpart_account_id = ?)", userID, items[i].ID, items[i].ID).Count(&items[i].TransactionCount).Error; err != nil {
+			if err := db.Model(&PersonalTransaction{}).Where("user_id = ? AND (account_id = ? OR counterpart_account_id = ?)", ownerID, items[i].ID, items[i].ID).Count(&items[i].TransactionCount).Error; err != nil {
 				response.ErrorInternal(c, "获取账户失败")
 				return
 			}
@@ -456,6 +459,7 @@ func handleUpdatePersonalAccount(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		existing.BalanceCents = existing.OpeningBalanceCents + balances[existing.ID]
+		audit.Log(db, c, "personal_account_update", "personal_account", existing.ID, "修改记账账户")
 		response.Success(c, existing)
 	}
 }
@@ -497,6 +501,7 @@ func handleRestorePersonalAccount(db *gorm.DB) gin.HandlerFunc {
 			response.ErrorInternal(c, "恢复账户失败")
 			return
 		}
+		audit.Log(db, c, "personal_account_restore", "personal_account", account.ID, "恢复记账账户")
 		response.Success(c, nil)
 	}
 }
