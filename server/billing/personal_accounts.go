@@ -160,6 +160,9 @@ func normalizePersonalAccount(req personalAccountRequest) (PersonalAccount, erro
 	case AccountTypeAlipay:
 		account.Institution = "支付宝"
 		account.CardKind = ""
+	case AccountTypeCash:
+		account.Institution = "现金"
+		account.CardKind = ""
 	default:
 		return PersonalAccount{}, errors.New("请选择有效的账户类型")
 	}
@@ -311,7 +314,7 @@ func handleListPersonalAccounts(db *gorm.DB) gin.HandlerFunc {
 			query = query.Where("archived = ?", false)
 		}
 		var items []PersonalAccount
-		if err := query.Order("archived ASC, updated_at DESC, id DESC").Find(&items).Error; err != nil {
+		if err := query.Order("archived ASC, sort_order ASC, id ASC").Find(&items).Error; err != nil {
 			response.ErrorInternal(c, "获取账户失败")
 			return
 		}
@@ -361,6 +364,12 @@ func handleCreatePersonalAccount(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		account.OpeningBalanceCents = req.OpeningBalanceCents
+		sortOrder, err := nextAccountSortOrder(db, account.UserID)
+		if err != nil {
+			response.ErrorInternal(c, "创建账户失败")
+			return
+		}
+		account.SortOrder = sortOrder
 		if account.Type == AccountTypeBankCard {
 			if strings.TrimSpace(req.CardNumber) != "" {
 				if err := prepareBankCard(db, &account, req.CardNumber); err != nil {
@@ -497,12 +506,82 @@ func handleRestorePersonalAccount(db *gorm.DB) gin.HandlerFunc {
 			response.Error(c, http.StatusNotFound, response.CodeNotFound, "账户不存在")
 			return
 		}
-		if err := db.Model(&account).Update("archived", false).Error; err != nil {
+		// A restored account joins the active accounts at the end, the same
+		// way a new account does.
+		sortOrder, err := nextAccountSortOrder(db, account.UserID)
+		if err != nil {
+			response.ErrorInternal(c, "恢复账户失败")
+			return
+		}
+		if err := db.Model(&account).Updates(map[string]interface{}{"archived": false, "sort_order": sortOrder}).Error; err != nil {
 			response.ErrorInternal(c, "恢复账户失败")
 			return
 		}
 		audit.Log(db, c, "personal_account_restore", "personal_account", account.ID, "恢复记账账户")
 		response.Success(c, nil)
+	}
+}
+
+// nextAccountSortOrder returns the position a new account takes at the end of
+// the account list of the user.
+func nextAccountSortOrder(db *gorm.DB, userID uint) (int, error) {
+	var maxOrder int
+	if err := db.Model(&PersonalAccount{}).Where("user_id = ? AND archived = ?", userID, false).Select("COALESCE(MAX(sort_order), -1)").Scan(&maxOrder).Error; err != nil {
+		return 0, err
+	}
+	return maxOrder + 1, nil
+}
+
+// handleOrderPersonalAccounts stores the order the user dragged the accounts
+// into. The order is written for the accounts of the request, the remaining
+// ones keep their relative order and move behind them.
+func handleOrderPersonalAccounts(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetUint("userID")
+		var req struct {
+			AccountIDs []uint `json:"account_ids"`
+		}
+		if c.ShouldBindJSON(&req) != nil || len(req.AccountIDs) == 0 {
+			response.ErrorBadRequest(c, "请提供完整的账户顺序")
+			return
+		}
+		var accounts []PersonalAccount
+		if err := db.Where("user_id = ?", userID).Find(&accounts).Error; err != nil {
+			response.ErrorInternal(c, "账户排序失败")
+			return
+		}
+		owned := make(map[uint]struct{}, len(accounts))
+		for _, account := range accounts {
+			owned[account.ID] = struct{}{}
+		}
+		seen := make(map[uint]struct{}, len(req.AccountIDs))
+		for _, id := range req.AccountIDs {
+			if _, ok := owned[id]; !ok {
+				response.ErrorBadRequest(c, "账户顺序包含无效账户")
+				return
+			}
+			if _, duplicate := seen[id]; duplicate {
+				response.ErrorBadRequest(c, "账户顺序不能重复")
+				return
+			}
+			seen[id] = struct{}{}
+		}
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			for index, id := range req.AccountIDs {
+				if err := tx.Model(&PersonalAccount{}).Where("id = ? AND user_id = ?", id, userID).Update("sort_order", index).Error; err != nil {
+					return err
+				}
+			}
+			// The accounts that are not part of the request keep their order
+			// and move behind the ones the user just sorted.
+			return tx.Model(&PersonalAccount{}).Where("user_id = ? AND id NOT IN ?", userID, req.AccountIDs).
+				Update("sort_order", gorm.Expr("sort_order + ?", len(req.AccountIDs))).Error
+		}); err != nil {
+			response.ErrorInternal(c, "账户排序失败")
+			return
+		}
+		audit.Log(db, c, "personal_account_order", "personal_account", 0, fmt.Sprintf("调整账户顺序，共 %d 个账户", len(req.AccountIDs)))
+		response.Success(c, gin.H{"account_ids": req.AccountIDs})
 	}
 }
 

@@ -38,6 +38,7 @@ func accountRouter(db *gorm.DB, userID uint) *gin.Engine {
 	group.Use(func(c *gin.Context) { c.Set("userID", userID); c.Next() })
 	group.GET("/personal/accounts", handleListPersonalAccounts(db))
 	group.POST("/personal/accounts", handleCreatePersonalAccount(db))
+	group.PUT("/personal/accounts/order", handleOrderPersonalAccounts(db))
 	group.PUT("/personal/accounts/:id", handleUpdatePersonalAccount(db))
 	group.DELETE("/personal/accounts/:id/permanent", handleDeletePersonalAccount(db))
 	return router

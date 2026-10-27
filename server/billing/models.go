@@ -23,6 +23,9 @@ const (
 	AccountTypeBankCard = "bank_card"
 	AccountTypeWechat   = "wechat"
 	AccountTypeAlipay   = "alipay"
+	// AccountTypeCash is the money in hand. It has no institution and no card
+	// number, so only the name and an optional note describe it.
+	AccountTypeCash = "cash"
 
 	CardKindDebit  = "debit"
 	CardKindCredit = "credit"
@@ -92,6 +95,10 @@ type PersonalAccount struct {
 	CardFingerprint  *string `gorm:"size:64;uniqueIndex:idx_personal_account_user_card" json:"-"`
 	Archived         bool    `gorm:"not null;default:false;index" json:"archived"`
 	TransactionCount int64   `gorm:"-" json:"transaction_count"`
+	// SortOrder is the position of the account in the account list. The user
+	// drags the accounts into the order they prefer, and the order is kept
+	// here so it survives a reload.
+	SortOrder int `gorm:"not null;default:0;index" json:"sort_order"`
 	// OpeningBalanceCents is the balance the account started with. It is set
 	// when the account is created and never changed afterwards, so the balance
 	// always stays explainable by its opening balance and its bills.

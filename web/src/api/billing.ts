@@ -5,7 +5,7 @@ export type BillKind = 'expense' | 'income'
 // user) and refund (money returned for a previous expense). Neither is part of
 // the income/expense category tree.
 export type PersonalBillKind = BillKind | 'transfer' | 'refund'
-export type PersonalAccountType = 'bank_card' | 'wechat' | 'alipay'
+export type PersonalAccountType = 'bank_card' | 'wechat' | 'alipay' | 'cash'
 export type BankCardKind = 'debit' | 'credit'
 
 export interface BillAttachment {
@@ -64,6 +64,9 @@ export interface PersonalAccount {
   card_kind?: BankCardKind
   archived: boolean
   transaction_count?: number
+  // sort_order is the position of the account in the account list. The user can
+  // drag the accounts into the order they prefer.
+  sort_order?: number
   // opening_balance_cents is the balance the account started with. It can only
   // be set when the account is created.
   opening_balance_cents?: number
@@ -330,6 +333,7 @@ export const billingApi = {
   personalAccounts: (includeArchived = false, ownerId = 0) => request.get('/api/billing/personal/accounts', { params: { ...(includeArchived ? { include_archived: true } : {}), ...(ownerId ? { owner_id: ownerId } : {}) } }),
   personalAccountOptions: () => request.get('/api/billing/personal/account-options'),
   personalAccountCreate: (data: PersonalAccountPayload) => request.post('/api/billing/personal/accounts', data),
+  personalAccountOrder: (accountIds: number[]) => request.put('/api/billing/personal/accounts/order', { account_ids: accountIds }),
   personalAccountUpdate: (id: number, data: PersonalAccountPayload) => request.put(`/api/billing/personal/accounts/${id}`, data),
   personalAccountArchive: (id: number) => request.delete(`/api/billing/personal/accounts/${id}`),
   personalAccountDelete: (id: number) => request.delete(`/api/billing/personal/accounts/${id}/permanent`),
