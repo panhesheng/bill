@@ -99,8 +99,8 @@
 
     <nav class="mobile-bottom-nav fixed inset-x-0 z-30 border-x-0 border-b-0 border-border bg-surface/88 px-1 py-1.5 shadow-card backdrop-blur-2xl lg:hidden" aria-label="移动端主导航">
       <div class="mx-auto grid max-w-lg grid-cols-4">
-        <RouterLink v-for="item in mobileNav" :key="item.to" :to="item.to" :class="isActive(item.to) ? 'mobile-nav-active' : 'text-muted-foreground'" class="flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-bold transition-[background-color,color,transform] duration-200 active:scale-[0.96]">
-          <span class="h-5 w-5" v-html="item.icon"></span><span>{{ item.mobileLabel || item.label }}</span>
+        <RouterLink v-for="item in mobileNav" :key="item.to" :to="item.to" :aria-label="item.ariaLabel" :class="isActive(item.to) ? 'mobile-nav-active' : 'text-muted-foreground'" class="flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-bold transition-[background-color,color,transform] duration-200 active:scale-[0.96]">
+          <span class="h-5 w-5" v-html="item.icon"></span><span>{{ item.label }}</span>
         </RouterLink>
       </div>
     </nav>
@@ -135,9 +135,16 @@ const analysisIcon = '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"
 const settingsIcon = '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M8 12h12M4 18h16M8 4v4m8 2v4m-8 2v4"/></svg>'
 const categoryIcon = '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10v6H4V5.5ZM14 4h4.5A1.5 1.5 0 0 1 20 5.5V10h-6V4ZM4 14h6v6H5.5A1.5 1.5 0 0 1 4 18.5V14Zm10 0h6v4.5a1.5 1.5 0 0 1-1.5 1.5H14v-6Z"/></svg>'
 const accountIcon = '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18v11H3zM3 10h18m-14 5h4"/></svg>'
+const homeIcon = '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10.5 12 3.5l8 7V20a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-9.5Z"/></svg>'
 const shareIcon = '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="M17 20h5v-2a3 3 0 0 0-5.4-1.8M17 20H7m10 0v-2c0-.7-.1-1.3-.4-1.8M7 20H2v-2a3 3 0 0 1 5.4-1.8M7 20v-2c0-.7.1-1.3.4-1.8m0 0a5 5 0 0 1 9.2 0M15 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>'
 const mainNav = [{ to: '/admin/personal/ledgers', label: '我的账本', icon: ledgersIcon }, { to: '/admin/shared', label: '共享账本', icon: sharedIcon }, { to: '/admin/personal', label: '我的账单', icon: billsIcon }, { to: '/admin/analysis', label: '统计分析', icon: analysisIcon }]
-const mobileNav = mainNav.map(item => ({ ...item, mobileLabel: item.label === '我的账单' ? '账单' : item.label === '我的账本' ? '账本' : item.label === '共享账本' ? '共享' : '统计' }))
+// 手机端底栏只留最常用的四个入口：首页、账户、账单和统计。
+const mobileNav = [
+  { to: '/admin', label: '首页', ariaLabel: '首页总览', icon: homeIcon },
+  { to: '/admin/personal/accounts', label: '账户', ariaLabel: '账户管理', icon: accountIcon },
+  { to: '/admin/personal', label: '账单', ariaLabel: '我的账单', icon: billsIcon },
+  { to: '/admin/analysis', label: '统计', ariaLabel: '统计分析', icon: analysisIcon },
+]
 const adminNav = [
   { to: '/admin/users', label: '用户管理', icon: sharedIcon },
   { to: '/admin/configs', label: '系统配置', icon: settingsIcon },
@@ -196,7 +203,7 @@ const onSupportConfirmed = () => {
   showSupportModal.value = false
 }
 
-const titleMap: Record<string, string> = { '/admin': '总览', '/admin/shares': '数据共享', '/admin/personal': '我的账单', '/admin/personal/ledgers': '我的账本', '/admin/personal/accounts': '账户管理', '/admin/personal/settings': '分类与标签', '/admin/shared': '共享账本', '/admin/analysis': '统计分析', '/admin/profile': '个人资料', '/admin/settings': '偏好设置', '/admin/users': '用户管理', '/admin/configs': '系统配置', '/admin/audit': '操作日志' }
+const titleMap: Record<string, string> = { '/admin': '首页', '/admin/shares': '数据共享', '/admin/personal': '我的账单', '/admin/personal/ledgers': '我的账本', '/admin/personal/accounts': '账户管理', '/admin/personal/settings': '分类与标签', '/admin/shared': '共享账本', '/admin/analysis': '统计分析', '/admin/profile': '个人资料', '/admin/settings': '偏好设置', '/admin/users': '用户管理', '/admin/configs': '系统配置', '/admin/audit': '操作日志' }
 const currentTitle = computed(() => route.path.startsWith('/admin/shared/') ? '共享账本详情' : titleMap[route.path] || '账单')
 const userInitial = computed(() => (authStore.user?.username || 'U').charAt(0).toUpperCase())
 const roleLabel = computed(() => authStore.isAdmin ? '管理员' : '普通用户')

@@ -31,11 +31,6 @@
         <MobileFilterDisclosure v-model="filtersExpanded" panel-id="personal-bill-filters" title="筛选账单" :summary="billFilterSummary" :active-count="activeFilterCount">
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
           <label class="filter-field sm:col-span-2 xl:col-span-1"><span>搜索</span><input v-model="filters.q" class="input-field" placeholder="备注或分类" @keyup.enter="applyFilters()" /></label>
-          <label class="filter-field"><span>账本</span><select v-model="filters.ledger_id" class="input-field"><option value="">全部账本</option><option v-for="item in ledgers" :key="item.id" :value="String(item.id)">{{ item.name }}</option></select></label>
-          <label class="filter-field"><span>账户</span><select v-model="filters.account_id" class="input-field"><option value="">全部账户</option><option v-for="item in accounts" :key="item.id" :value="String(item.id)">{{ item.name }}</option></select></label>
-          <label class="filter-field"><span>类型</span><select v-model="filters.kind" class="input-field"><option value="">全部</option><option value="expense">支出</option><option value="income">收入</option><option value="transfer">转账</option><option value="refund">退款</option></select></label>
-          <label class="filter-field"><span>分类</span><select v-model="filters.category" class="input-field"><option value="">全部</option><option v-for="item in allCategoryNames" :key="item">{{ item }}</option></select></label>
-          <label class="filter-field"><span>标签</span><select v-model="filters.tag_id" class="input-field"><option value="">全部</option><option v-for="item in tags" :key="item.id" :value="String(item.id)">{{ item.name }}</option></select></label>
           <div class="flex flex-wrap items-end gap-2 sm:col-span-2 xl:col-span-2">
             <label class="filter-field min-w-0 flex-1"><span>按年</span><select v-model="quickRange.year" class="input-field" @change="onYearChange"><option value="">不限年份</option><option v-for="year in yearOptions" :key="year" :value="String(year)">{{ year }} 年</option></select></label>
             <label class="filter-field min-w-0 flex-1"><span>按月</span><select v-model="quickRange.month" class="input-field" @change="onMonthChange"><option value="">不限月份</option><option v-for="month in monthOptions" :key="month" :value="String(month).padStart(2, '0')">{{ month }} 月</option></select></label>
@@ -43,6 +38,11 @@
           </div>
           <label class="filter-field"><span>开始日期</span><input v-model="filters.start" type="date" class="input-field" @change="syncQuickRange" /></label>
           <label class="filter-field"><span>结束日期</span><input v-model="filters.end" type="date" class="input-field" @change="syncQuickRange" /></label>
+          <label class="filter-field"><span>账本</span><select v-model="filters.ledger_id" class="input-field"><option value="">全部账本</option><option v-for="item in ledgers" :key="item.id" :value="String(item.id)">{{ item.name }}</option></select></label>
+          <label class="filter-field"><span>账户</span><select v-model="filters.account_id" class="input-field"><option value="">全部账户</option><option v-for="item in accounts" :key="item.id" :value="String(item.id)">{{ item.name }}</option></select></label>
+          <label class="filter-field"><span>类型</span><select v-model="filters.kind" class="input-field"><option value="">全部</option><option value="expense">支出</option><option value="income">收入</option><option value="transfer">转账</option><option value="refund">退款</option></select></label>
+          <label class="filter-field"><span>分类</span><select v-model="filters.category" class="input-field"><option value="">全部</option><option v-for="item in allCategoryNames" :key="item">{{ item }}</option></select></label>
+          <label class="filter-field"><span>标签</span><select v-model="filters.tag_id" class="input-field"><option value="">全部</option><option v-for="item in tags" :key="item.id" :value="String(item.id)">{{ item.name }}</option></select></label>
           <div class="flex items-end gap-2 sm:col-span-2 xl:col-span-2"><button type="button" class="btn-ghost min-h-11 flex-1 px-3" :disabled="!activeFilterCount" @click="resetFilters">重置</button><button type="button" class="btn-brand min-h-11 flex-1 px-4" @click="applyFilters()">筛选</button></div>
           </div>
           <p class="mt-3 text-xs leading-5 text-muted-foreground">选择年份自动填充 1 月 1 日至 12 月 31 日，选择月份自动填充当月首日至最后一天；也可以直接修改下面的日期。</p>
