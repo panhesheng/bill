@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"smallgo/server/audit"
 	"smallgo/server/response"
@@ -499,6 +500,51 @@ func handleListPersonalCategories(db *gorm.DB) gin.HandlerFunc {
 			}
 		}
 		response.Success(c, items)
+	}
+}
+
+// personalRecentCategory is a category the user records often. The bill form
+// offers them as quick picks.
+type personalRecentCategory struct {
+	Name        string `json:"name"`
+	Kind        string `json:"kind"`
+	Count       int64  `json:"count"`
+	RecentCount int64  `json:"recent_count"`
+}
+
+// handleListRecentPersonalCategories returns the categories the user records
+// most often, so a bill can be filed with a single click.
+func handleListRecentPersonalCategories(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ownerID, ok := dataOwner(db, c)
+		if !ok {
+			return
+		}
+		limit := 8
+		if value, err := strconv.Atoi(c.Query("limit")); err == nil && value > 0 && value <= 20 {
+			limit = value
+		}
+		query := db.Model(&PersonalTransaction{}).
+			Where("user_id = ? AND category <> ''", ownerID).
+			Where("kind IN ?", []string{KindExpense, KindIncome})
+		kind := c.Query("kind")
+		if kind == KindExpense || kind == KindIncome {
+			query = query.Where("kind = ?", kind)
+		}
+		// The categories used in the last three months come first, the total
+		// count breaks the tie for the categories used long ago.
+		since := time.Now().AddDate(0, 0, -90).Format("2006-01-02 15:04:05")
+		var rows []personalRecentCategory
+		if err := query.
+			Select("category AS name, kind, COUNT(*) AS count, SUM(CASE WHEN occurred_at >= ? THEN 1 ELSE 0 END) AS recent_count", since).
+			Group("category, kind").
+			Order("recent_count DESC, count DESC, MAX(occurred_at) DESC").
+			Limit(limit).
+			Scan(&rows).Error; err != nil {
+			response.ErrorInternal(c, "获取常用分类失败")
+			return
+		}
+		response.Success(c, gin.H{"items": rows})
 	}
 }
 

@@ -29,16 +29,24 @@
     <template v-else>
       <section class="surface rounded-2xl p-3 sm:p-4">
         <MobileFilterDisclosure v-model="filtersExpanded" panel-id="personal-bill-filters" title="筛选账单" :summary="billFilterSummary" :active-count="activeFilterCount">
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[1.3fr_repeat(6,1fr)_auto]">
-          <label class="filter-field sm:col-span-2 xl:col-span-1"><span>搜索</span><input v-model="filters.q" class="input-field" placeholder="备注或分类" @keyup.enter="applyFilters" /></label>
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <label class="filter-field sm:col-span-2 xl:col-span-1"><span>搜索</span><input v-model="filters.q" class="input-field" placeholder="备注或分类" @keyup.enter="applyFilters()" /></label>
           <label class="filter-field"><span>账本</span><select v-model="filters.ledger_id" class="input-field"><option value="">全部账本</option><option v-for="item in ledgers" :key="item.id" :value="String(item.id)">{{ item.name }}</option></select></label>
           <label class="filter-field"><span>账户</span><select v-model="filters.account_id" class="input-field"><option value="">全部账户</option><option v-for="item in accounts" :key="item.id" :value="String(item.id)">{{ item.name }}</option></select></label>
           <label class="filter-field"><span>类型</span><select v-model="filters.kind" class="input-field"><option value="">全部</option><option value="expense">支出</option><option value="income">收入</option><option value="transfer">转账</option><option value="refund">退款</option></select></label>
           <label class="filter-field"><span>分类</span><select v-model="filters.category" class="input-field"><option value="">全部</option><option v-for="item in allCategoryNames" :key="item">{{ item }}</option></select></label>
           <label class="filter-field"><span>标签</span><select v-model="filters.tag_id" class="input-field"><option value="">全部</option><option v-for="item in tags" :key="item.id" :value="String(item.id)">{{ item.name }}</option></select></label>
-          <label class="filter-field"><span>日期范围</span><div class="grid grid-cols-1 gap-2 sm:grid-cols-2"><input v-model="filters.start" type="date" class="input-field px-3" aria-label="开始日期" /><input v-model="filters.end" type="date" class="input-field px-3" aria-label="结束日期" /></div></label>
-          <div class="flex items-end gap-2 sm:col-span-2 xl:col-span-1"><button type="button" class="btn-ghost min-h-11 flex-1 px-3" :disabled="!activeFilterCount" @click="resetFilters">重置</button><button type="button" class="btn-brand min-h-11 flex-1 px-4" @click="applyFilters">筛选</button></div>
+          <div class="flex flex-wrap items-end gap-2 sm:col-span-2 xl:col-span-2">
+            <label class="filter-field min-w-0 flex-1"><span>按年</span><select v-model="quickRange.year" class="input-field" @change="onYearChange"><option value="">不限年份</option><option v-for="year in yearOptions" :key="year" :value="String(year)">{{ year }} 年</option></select></label>
+            <label class="filter-field min-w-0 flex-1"><span>按月</span><select v-model="quickRange.month" class="input-field" @change="onMonthChange"><option value="">不限月份</option><option v-for="month in monthOptions" :key="month" :value="String(month).padStart(2, '0')">{{ month }} 月</option></select></label>
+            <button type="button" class="btn-ghost min-h-11 shrink-0 px-3 text-xs" @click="resetToCurrentMonth">回到本月</button>
           </div>
+          <label class="filter-field"><span>开始日期</span><input v-model="filters.start" type="date" class="input-field" @change="syncQuickRange" /></label>
+          <label class="filter-field"><span>结束日期</span><input v-model="filters.end" type="date" class="input-field" @change="syncQuickRange" /></label>
+          <div class="flex items-end gap-2 sm:col-span-2 xl:col-span-2"><button type="button" class="btn-ghost min-h-11 flex-1 px-3" :disabled="!activeFilterCount" @click="resetFilters">重置</button><button type="button" class="btn-brand min-h-11 flex-1 px-4" @click="applyFilters()">筛选</button></div>
+          </div>
+          <p class="mt-3 text-xs leading-5 text-muted-foreground">选择年份自动填充 1 月 1 日至 12 月 31 日，选择月份自动填充当月首日至最后一天；也可以直接修改下面的日期。</p>
+          <p v-if="filterError" class="mt-2 text-sm font-medium text-rose-600" role="alert">{{ filterError }}</p>
         </MobileFilterDisclosure>
       </section>
 
@@ -167,7 +175,12 @@ const items = ref<PersonalTransaction[]>([]), ledgers = ref<PersonalLedger[]>([]
 const refundSources = ref<RefundableTransaction[]>([]), refundSourcesLoading = ref(false), refundKeyword = ref('')
 const total = ref(0), page = ref(1), pageSize = 20
 const filters = reactive({ q: '', ledger_id: '', account_id: '', tag_id: '', kind: '', category: '', start: '', end: '' })
+// The year and month pickers are shortcuts for the date range, they are not
+// sent to the server.
+const quickRange = reactive({ year: '', month: '' })
+const availableYears = ref<number[]>([])
 const filtersExpanded = ref(false)
+const filterError = ref('')
 const activeFilterCount = computed(() => Object.values(filters).filter(value => String(value).trim() !== '').length)
 const billFilterSummary = computed(() => activeFilterCount.value ? `已启用 ${activeFilterCount.value} 项条件` : '按账本、账户、日期等查找')
 const showForm = ref(false), showDelete = ref(false)
@@ -211,6 +224,20 @@ const accountFieldLabel = computed(() => {
   return '收支账户'
 })
 const allCategoryNames = computed(() => [...new Set([...categoryNames('expense'), ...categoryNames('income')])])
+const today = new Date()
+const currentYear = today.getFullYear()
+const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
+// The year picker offers the years the user recorded something in, so the
+// quick range never suggests an empty year.
+const yearOptions = computed(() => {
+  const years = new Set<number>()
+  availableYears.value.forEach(item => { if (Number.isFinite(item) && item > 0) years.add(item) })
+  years.add(currentYear)
+  const selected = Number(quickRange.year)
+  if (selected > 0) years.add(selected)
+  return [...years].sort((a, b) => b - a)
+})
+const monthOptions = computed(() => Array.from({ length: 12 }, (_, index) => index + 1))
 
 function listData<T>(response: any): T[] { const data = response.data?.data; return Array.isArray(data) ? data : data?.items || [] }
 function notify(message: string, type: 'success' | 'error' = 'success') { toast.message = ''; setTimeout(() => { toast.message = message; toast.type = type }) }
@@ -244,8 +271,68 @@ function amountPrefix(item: PersonalTransaction) {
 function syncLedgerFilterFromRoute() { const raw = Array.isArray(route.query.ledger_id) ? route.query.ledger_id[0] : route.query.ledger_id; const id = Number(raw); filters.ledger_id = Number.isInteger(id) && ledgers.value.some(ledger => ledger.id === id) ? String(id) : '' }
 async function loadResources() { resourcesLoading.value = true; try { const ownerId = shareStore.currentOwnerId; const [ledgerRes, accountRes, categoryRes, tagRes] = await Promise.all([billingApi.personalLedgers(false, ownerId), billingApi.personalAccounts(false, ownerId), billingApi.personalCategories(ownerId), billingApi.personalTags(ownerId)]); ledgers.value = listData(ledgerRes); accounts.value = listData(accountRes); categories.value = listData(categoryRes); tags.value = listData(tagRes) } catch (error) { notify(apiMessage(error, '记账资料加载失败'), 'error') } finally { resourcesLoading.value = false } }
 async function load() { if (!ledgers.value.length) { items.value = []; total.value = 0; return } loading.value = true; try { const res = await billingApi.personalList(params()); items.value = res.data.data?.items || []; total.value = res.data.data?.total || 0 } catch (error) { notify(apiMessage(error, '账单加载失败'), 'error') } finally { loading.value = false } }
-function applyFilters() { page.value = 1; filtersExpanded.value = false; load() }
-function resetFilters() { Object.assign(filters, { q: '', ledger_id: '', account_id: '', tag_id: '', kind: '', category: '', start: '', end: '' }); applyFilters() }
+function applyFilters(options: { collapse?: boolean } = {}) { filterError.value = ''; if (filters.start && filters.end && filters.start > filters.end) { filterError.value = '开始日期不能晚于结束日期'; return } page.value = 1; if (options.collapse !== false) filtersExpanded.value = false; load() }
+function resetFilters() { Object.assign(filters, { q: '', ledger_id: '', account_id: '', tag_id: '', kind: '', category: '', start: '', end: '' }); quickRange.year = ''; quickRange.month = ''; applyFilters() }
+function localDate(value: Date) {
+  const offset = value.getTimezoneOffset() * 60_000
+  return new Date(value.getTime() - offset).toISOString().slice(0, 10)
+}
+// Picking a year fills the whole year, picking a month fills that month. The
+// dates themselves stay editable, so a custom range is still possible.
+function onYearChange() {
+  const year = Number(quickRange.year)
+  quickRange.month = ''
+  if (year) {
+    filters.start = `${year}-01-01`
+    filters.end = `${year}-12-31`
+  }
+  applyFilters({ collapse: false })
+}
+function onMonthChange() {
+  const month = Number(quickRange.month)
+  const year = Number(quickRange.year) || currentYear
+  if (!month) {
+    // Without a month the range covers the whole year.
+    if (Number(quickRange.year)) {
+      filters.start = `${year}-01-01`
+      filters.end = `${year}-12-31`
+    }
+    applyFilters({ collapse: false })
+    return
+  }
+  quickRange.year = String(year)
+  filters.start = `${year}-${String(month).padStart(2, '0')}-01`
+  filters.end = localDate(new Date(year, month, 0))
+  applyFilters({ collapse: false })
+}
+// Manual date edits keep the quick pickers in sync with the current range.
+function syncQuickRange() {
+  const start = filters.start
+  const end = filters.end
+  if (!start || !end || start.slice(0, 4) !== end.slice(0, 4)) {
+    quickRange.year = ''
+    quickRange.month = ''
+    return
+  }
+  quickRange.year = start.slice(0, 4)
+  quickRange.month = start.slice(5, 7) === end.slice(5, 7) ? start.slice(5, 7) : ''
+}
+function resetToCurrentMonth() {
+  filters.start = localDate(firstDay)
+  filters.end = localDate(today)
+  syncQuickRange()
+  applyFilters({ collapse: false })
+}
+async function loadYears() {
+  try {
+    const res = await billingApi.personalFlow({ ...shareStore.ownerParam })
+    const years = (res.data?.data?.available_years || []) as number[]
+    availableYears.value = years.filter(item => Number.isFinite(item) && item > 0)
+  } catch {
+    // Without the year list the picker still offers the recent years.
+    availableYears.value = Array.from({ length: 6 }, (_, index) => currentYear - index)
+  }
+}
 function changePage(value: number) { page.value = value; load() }
 function resetForm() { editing.value = null; Object.assign(form, { ledger_id: Number(filters.ledger_id) || ledgers.value[0]?.id || 0, account_id: pickDefaultAccountId(accounts.value, [Number(filters.account_id) || 0, readLastAccountId()]), counterpart_account_id: 0, refund_source_id: 0, kind: 'expense', amount: '', category: '', tag_ids: [], note: '', occurred_at: toLocalInput(), attachments: [] }); formError.value = ''; attachmentUploading.value = false }
 function openCreate() { if (shareStore.isSharedView) return; if (!ledgers.value.length) return; resetForm(); showForm.value = true }
@@ -296,12 +383,12 @@ function askDelete(item: PersonalTransaction) { if (shareStore.isSharedView) ret
 async function deleteItem() { if (!deleting.value) return; try { await billingApi.personalDelete(deleting.value.id); notify('账单已删除'); if (items.value.length === 1 && page.value > 1) page.value--; load() } catch (error) { notify(apiMessage(error), 'error') } }
 async function exportCsv() { exporting.value = true; try { const res = await billingApi.personalExport({ ...filters, ...shareStore.ownerParam }); const url = URL.createObjectURL(new Blob([res.data], { type: 'text/csv;charset=utf-8' })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `个人账单-${new Date().toISOString().slice(0, 10)}.csv`; anchor.click(); URL.revokeObjectURL(url) } catch (error) { notify(apiMessage(error, '导出失败'), 'error') } finally { exporting.value = false } }
 watch(() => route.query.ledger_id, async () => { if (resourcesLoading.value) return; syncLedgerFilterFromRoute(); page.value = 1; await load() })
-watch(() => shareStore.currentOwnerId, async () => { filters.ledger_id = ''; filters.account_id = ''; filters.tag_id = ''; filters.category = ''; await loadResources(); syncLedgerFilterFromRoute(); page.value = 1; await load() })
+watch(() => shareStore.currentOwnerId, async () => { filters.ledger_id = ''; filters.account_id = ''; filters.tag_id = ''; filters.category = ''; await Promise.all([loadResources(), loadYears()]); syncLedgerFilterFromRoute(); page.value = 1; await load() })
 watch(() => form.refund_source_id, id => {
   if (form.kind !== 'refund' || !id) return
   // Editing a refund keeps its own amount; picking another source bill resets it.
   if (editing.value && id === editing.value.refund_source_id) return
   selectRefundSource(id)
 })
-onMounted(async () => { await loadResources(); syncLedgerFilterFromRoute(); await load() })
+onMounted(async () => { await Promise.all([loadResources(), loadYears()]); syncLedgerFilterFromRoute(); await load() })
 </script>

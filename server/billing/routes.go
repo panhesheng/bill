@@ -106,6 +106,7 @@ func setupRoutes(api *gin.RouterGroup, db *gorm.DB) {
 	group.DELETE("/personal/ledgers/:id/permanent", handleDeletePersonalLedger(db))
 	group.POST("/personal/ledgers/:id/restore", handleRestorePersonalLedger(db))
 	group.GET("/personal/categories", handleListPersonalCategories(db))
+	group.GET("/personal/categories/recent", handleListRecentPersonalCategories(db))
 	group.POST("/personal/categories", handleCreatePersonalCategory(db))
 	group.PUT("/personal/categories/:id", handleUpdatePersonalCategory(db))
 	group.DELETE("/personal/categories/:id", handleDeletePersonalCategory(db))

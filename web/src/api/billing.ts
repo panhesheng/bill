@@ -128,6 +128,16 @@ export interface PersonalCategory {
   transaction_count?: number
 }
 
+// PersonalRecentCategory is a category the user records often. The bill form
+// offers them as quick picks.
+export interface PersonalRecentCategory {
+  name: string
+  kind: BillKind
+  count: number
+  recent_count: number
+  last_used_at?: string
+}
+
 export interface PersonalTag {
   id: number
   user_id?: number
@@ -351,6 +361,7 @@ export const billingApi = {
     return request.post('/api/upload', form)
   },
   personalCategories: (ownerId = 0) => request.get('/api/billing/personal/categories', { params: ownerId ? { owner_id: ownerId } : {} }),
+  personalRecentCategories: (ownerId = 0, kind?: BillKind, limit = 8) => request.get('/api/billing/personal/categories/recent', { params: { ...(ownerId ? { owner_id: ownerId } : {}), ...(kind ? { kind } : {}), limit } }),
   personalCategoryCreate: (data: { name: string; kind: BillKind; parent_id: number }) => request.post('/api/billing/personal/categories', data),
   personalCategoryUpdate: (id: number, data: { name: string; kind: BillKind; parent_id: number }) => request.put(`/api/billing/personal/categories/${id}`, data),
   personalCategoryDelete: (id: number) => request.delete(`/api/billing/personal/categories/${id}`),
