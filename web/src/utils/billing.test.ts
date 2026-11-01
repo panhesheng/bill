@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { centsToMoney, isSplitValid, moneyToCents, pickDefaultAccountId, refundCategory, splitByWeights, splitEqually, splitExactly, transferCategory, validateRefundAmount, validateTransferAccounts } from './billing'
+import { accountOptionLabel, centsToMoney, isSplitValid, moneyToCents, pickDefaultAccountId, refundCategory, splitByWeights, splitEqually, splitExactly, transferCategory, validateRefundAmount, validateTransferAccounts } from './billing'
 
 describe('money conversion', () => {
   it('converts decimal money without floating point leakage', () => {
@@ -92,6 +92,20 @@ describe('transfer account validation', () => {
 describe('refund category', () => {
   it('uses a fixed refund category', () => {
     expect(refundCategory).toBe('退款')
+  })
+})
+
+describe('account option label', () => {
+  it('shows the name, the identifier and the balance', () => {
+    expect(accountOptionLabel({ name: '工资卡', identifier: '1234', balance_cents: 120000 })).toBe('工资卡 · 1234 · 余额 ¥1,200.00')
+  })
+
+  it('leaves out the identifier when there is none', () => {
+    expect(accountOptionLabel({ name: '日常微信', identifier: '', balance_cents: 5600 })).toBe('日常微信 · 余额 ¥56.00')
+  })
+
+  it('treats a missing balance as zero', () => {
+    expect(accountOptionLabel({ name: '现金钱包' })).toBe('现金钱包 · 余额 ¥0.00')
   })
 })
 

@@ -72,7 +72,7 @@
         <span>{{ accountFieldLabel }}</span>
         <select v-model.number="form.account_id" required class="input-field" :disabled="resourcesLoading">
           <option :value="0" disabled>{{ resourcesLoading ? '加载中' : '请选择账户' }}</option>
-          <option v-for="item in accounts" :key="item.id" :value="item.id">{{ item.name }} · {{ accountDetail(item) }}</option>
+          <option v-for="item in accounts" :key="item.id" :value="item.id">{{ accountOptionLabel(item) }}</option>
         </select>
       </label>
 
@@ -80,7 +80,7 @@
         <span>转入账户</span>
         <select v-model.number="form.counterpart_account_id" required class="input-field" :disabled="resourcesLoading">
           <option :value="0" disabled>{{ resourcesLoading ? '加载中' : '请选择转入账户' }}</option>
-          <option v-for="item in accounts" :key="item.id" :value="item.id" :disabled="item.id === form.account_id">{{ item.name }} · {{ accountDetail(item) }}</option>
+          <option v-for="item in accounts" :key="item.id" :value="item.id" :disabled="item.id === form.account_id">{{ accountOptionLabel(item) }}</option>
         </select>
         <small v-if="form.account_id" class="text-muted-foreground">转出与转入账户不能相同，转账不计入收入与支出。</small>
       </label>
@@ -133,7 +133,7 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { billingApi, type PersonalAccount, type PersonalBillKind, type PersonalCategory, type PersonalLedger, type PersonalTag, type RefundableTransaction } from '../../api/billing'
-import { apiMessage, centsToMoney, formatDate, formatMoney, moneyToCents, pickDefaultAccountId, readLastAccountId, refundCategory, rememberAccountId, toLocalInput, transferCategory, validateRefundAmount, validateTransferAccounts } from '../../utils/billing'
+import { apiMessage, accountOptionLabel, centsToMoney, formatDate, formatMoney, moneyToCents, pickDefaultAccountId, readLastAccountId, refundCategory, rememberAccountId, toLocalInput, transferCategory, validateRefundAmount, validateTransferAccounts } from '../../utils/billing'
 import Modal from '../Modal.vue'
 import CategoryPicker from './CategoryPicker.vue'
 import PersonalTagInput from './PersonalTagInput.vue'
@@ -180,7 +180,6 @@ function resetForm() {
   formError.value = ''
 }
 
-function accountDetail(item: PersonalAccount) { return item.type === 'bank_card' ? `${item.institution} · ${item.card_kind === 'credit' ? '信用卡' : item.card_kind === 'debit' ? '储蓄卡' : '银行卡'} · ${item.identifier ? `尾号 ${item.identifier}` : '未填写卡号'}` : item.institution }
 
 function refundSourceLabel(item: RefundableTransaction) { return `${item.category} · ${formatDate(item.occurred_at)} · ${formatMoney(item.amount_cents)}（可退 ${formatMoney(item.refundable_cents)}）` }
 

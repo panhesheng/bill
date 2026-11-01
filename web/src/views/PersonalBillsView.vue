@@ -131,8 +131,8 @@
           <div class="mt-1 flex items-center justify-between gap-3"><span class="text-muted-foreground">已退金额</span><span>{{ formatMoney(refundSourceInfo.refunded_cents) }}</span></div>
           <div class="mt-1 flex items-center justify-between gap-3"><span class="text-muted-foreground">剩余可退</span><span class="font-semibold text-emerald-600 dark:text-emerald-300">{{ formatMoney(refundSourceInfo.refundable_cents) }}</span></div>
         </div>
-        <label class="form-field"><span>{{ accountFieldLabel }}</span><select v-model.number="form.account_id" required class="input-field"><option :value="0" disabled>请选择账户</option><option v-for="item in accounts" :key="item.id" :value="item.id">{{ item.name }} · {{ accountDetail(item) }}</option></select></label>
-        <label v-if="form.kind === 'transfer'" class="form-field"><span>转入账户</span><select v-model.number="form.counterpart_account_id" required class="input-field"><option :value="0" disabled>请选择转入账户</option><option v-for="item in accounts" :key="item.id" :value="item.id" :disabled="item.id === form.account_id">{{ item.name }} · {{ accountDetail(item) }}</option></select><small v-if="form.account_id" class="text-muted-foreground">转出与转入账户不能相同，转账不计入收入与支出。</small></label>
+        <label class="form-field"><span>{{ accountFieldLabel }}</span><select v-model.number="form.account_id" required class="input-field"><option :value="0" disabled>请选择账户</option><option v-for="item in accounts" :key="item.id" :value="item.id">{{ accountOptionLabel(item) }}</option></select></label>
+        <label v-if="form.kind === 'transfer'" class="form-field"><span>转入账户</span><select v-model.number="form.counterpart_account_id" required class="input-field"><option :value="0" disabled>请选择转入账户</option><option v-for="item in accounts" :key="item.id" :value="item.id" :disabled="item.id === form.account_id">{{ accountOptionLabel(item) }}</option></select><small v-if="form.account_id" class="text-muted-foreground">转出与转入账户不能相同，转账不计入收入与支出。</small></label>
         <label class="form-field">
           <span>金额</span>
           <div class="relative"><span class="absolute left-4 top-1/2 -translate-y-1/2 font-semibold text-muted-foreground">¥</span><input v-model="form.amount" required inputmode="decimal" class="input-field pl-9 text-lg font-bold" placeholder="0.00" /></div>
@@ -157,7 +157,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useDataShareStore } from '../stores/dataShare'
 import { billingApi, type BillAttachment, type BillKind, type PersonalAccount, type PersonalBillKind, type PersonalCategory, type PersonalLedger, type PersonalTag, type PersonalTransaction, type RefundableTransaction } from '../api/billing'
-import { apiMessage, centsToMoney, formatDate, formatMoney, moneyToCents, pickDefaultAccountId, readLastAccountId, refundCategory, rememberAccountId, toLocalInput, transferCategory, validateRefundAmount, validateTransferAccounts } from '../utils/billing'
+import { apiMessage, accountOptionLabel, centsToMoney, formatDate, formatMoney, moneyToCents, pickDefaultAccountId, readLastAccountId, refundCategory, rememberAccountId, toLocalInput, transferCategory, validateRefundAmount, validateTransferAccounts } from '../utils/billing'
 import PageHeader from '../components/PageHeader.vue'
 import MobileFilterDisclosure from '../components/MobileFilterDisclosure.vue'
 import Modal from '../components/Modal.vue'
@@ -243,7 +243,6 @@ function listData<T>(response: any): T[] { const data = response.data?.data; ret
 function notify(message: string, type: 'success' | 'error' = 'success') { toast.message = ''; setTimeout(() => { toast.message = message; toast.type = type }) }
 function params() { return { ...filters, ...shareStore.ownerParam, page: page.value, pageSize } }
 function ledgerName(item: PersonalTransaction) { return item.ledger_name || ledgers.value.find(ledger => ledger.id === item.ledger_id)?.name || '未知账本' }
-function accountDetail(item: PersonalAccount) { return item.type === 'bank_card' ? `${item.institution} · ${item.card_kind === 'credit' ? '信用卡' : item.card_kind === 'debit' ? '储蓄卡' : '银行卡'} · ${item.identifier ? `尾号 ${item.identifier}` : '未填写卡号'}` : item.institution }
 function isTransfer(item: PersonalTransaction) { return item.kind === 'transfer' }
 function isRefund(item: PersonalTransaction) { return item.kind === 'refund' }
 function accountLabel(item: PersonalTransaction) {
@@ -269,6 +268,9 @@ function amountPrefix(item: PersonalTransaction) {
   return item.kind === 'income' ? '+' : '-'
 }
 function syncLedgerFilterFromRoute() { const raw = Array.isArray(route.query.ledger_id) ? route.query.ledger_id[0] : route.query.ledger_id; const id = Number(raw); filters.ledger_id = Number.isInteger(id) && ledgers.value.some(ledger => ledger.id === id) ? String(id) : '' }
+// The account card of the account management page links here with the account
+// in the query, so the list opens on the bills of that account.
+function syncAccountFilterFromRoute() { const raw = Array.isArray(route.query.account_id) ? route.query.account_id[0] : route.query.account_id; const id = Number(raw); filters.account_id = Number.isInteger(id) && accounts.value.some(account => account.id === id) ? String(id) : '' }
 async function loadResources() { resourcesLoading.value = true; try { const ownerId = shareStore.currentOwnerId; const [ledgerRes, accountRes, categoryRes, tagRes] = await Promise.all([billingApi.personalLedgers(false, ownerId), billingApi.personalAccounts(false, ownerId), billingApi.personalCategories(ownerId), billingApi.personalTags(ownerId)]); ledgers.value = listData(ledgerRes); accounts.value = listData(accountRes); categories.value = listData(categoryRes); tags.value = listData(tagRes) } catch (error) { notify(apiMessage(error, '记账资料加载失败'), 'error') } finally { resourcesLoading.value = false } }
 async function load() { if (!ledgers.value.length) { items.value = []; total.value = 0; return } loading.value = true; try { const res = await billingApi.personalList(params()); items.value = res.data.data?.items || []; total.value = res.data.data?.total || 0 } catch (error) { notify(apiMessage(error, '账单加载失败'), 'error') } finally { loading.value = false } }
 function applyFilters(options: { collapse?: boolean } = {}) { filterError.value = ''; if (filters.start && filters.end && filters.start > filters.end) { filterError.value = '开始日期不能晚于结束日期'; return } page.value = 1; if (options.collapse !== false) filtersExpanded.value = false; load() }
@@ -383,12 +385,13 @@ function askDelete(item: PersonalTransaction) { if (shareStore.isSharedView) ret
 async function deleteItem() { if (!deleting.value) return; try { await billingApi.personalDelete(deleting.value.id); notify('账单已删除'); if (items.value.length === 1 && page.value > 1) page.value--; load() } catch (error) { notify(apiMessage(error), 'error') } }
 async function exportCsv() { exporting.value = true; try { const res = await billingApi.personalExport({ ...filters, ...shareStore.ownerParam }); const url = URL.createObjectURL(new Blob([res.data], { type: 'text/csv;charset=utf-8' })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `个人账单-${new Date().toISOString().slice(0, 10)}.csv`; anchor.click(); URL.revokeObjectURL(url) } catch (error) { notify(apiMessage(error, '导出失败'), 'error') } finally { exporting.value = false } }
 watch(() => route.query.ledger_id, async () => { if (resourcesLoading.value) return; syncLedgerFilterFromRoute(); page.value = 1; await load() })
-watch(() => shareStore.currentOwnerId, async () => { filters.ledger_id = ''; filters.account_id = ''; filters.tag_id = ''; filters.category = ''; await Promise.all([loadResources(), loadYears()]); syncLedgerFilterFromRoute(); page.value = 1; await load() })
+watch(() => route.query.account_id, async () => { if (resourcesLoading.value) return; syncAccountFilterFromRoute(); page.value = 1; await load() })
+watch(() => shareStore.currentOwnerId, async () => { filters.ledger_id = ''; filters.account_id = ''; filters.tag_id = ''; filters.category = ''; await Promise.all([loadResources(), loadYears()]); syncLedgerFilterFromRoute(); syncAccountFilterFromRoute(); page.value = 1; await load() })
 watch(() => form.refund_source_id, id => {
   if (form.kind !== 'refund' || !id) return
   // Editing a refund keeps its own amount; picking another source bill resets it.
   if (editing.value && id === editing.value.refund_source_id) return
   selectRefundSource(id)
 })
-onMounted(async () => { await Promise.all([loadResources(), loadYears()]); syncLedgerFilterFromRoute(); await load() })
+onMounted(async () => { await Promise.all([loadResources(), loadYears()]); syncLedgerFilterFromRoute(); syncAccountFilterFromRoute(); await load() })
 </script>

@@ -3,6 +3,15 @@ export const personalIncomeCategories = ['工资', '奖金', '兼职', '理财',
 export const sharedExpenseCategories = ['聚餐', '住宿', '交通', '门票', '采购', '房租', '水电', '活动', '其他']
 export const sharedIncomeCategories = ['退款', '报销', '补贴', '共同收入', '其他']
 
+// The account options in a select only show the name, the identifier and the
+// balance, so the list stays short and the balance is at hand.
+export function accountOptionLabel(account: { name: string; identifier?: string; balance_cents?: number }) {
+  const parts = [account.name]
+  if (account.identifier) parts.push(account.identifier)
+  parts.push(`余额 ${formatMoney(account.balance_cents || 0)}`)
+  return parts.join(' · ')
+}
+
 export function formatMoney(cents: number, currency = 'CNY') {
   return new Intl.NumberFormat('zh-CN', {
     style: 'currency',
