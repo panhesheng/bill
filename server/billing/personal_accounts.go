@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"smallgo/server/audit"
 	"smallgo/server/response"
@@ -274,6 +275,55 @@ func personalAccountConflictMessage(err error) string {
 		return "账户名称已存在"
 	}
 	return ""
+}
+
+// personalRecentAccount is an account the user records bills with often. The
+// bill form offers them as quick picks.
+type personalRecentAccount struct {
+	ID          uint   `json:"id"`
+	Name        string `json:"name"`
+	Identifier  string `json:"identifier"`
+	Type        string `json:"type"`
+	Count       int64  `json:"count"`
+	RecentCount int64  `json:"recent_count"`
+}
+
+// handleListRecentPersonalAccounts returns the accounts the user records bills
+// with most often, so a bill can be filed with a single click. A transfer
+// counts for both the account it leaves and the account it arrives in.
+func handleListRecentPersonalAccounts(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ownerID, ok := dataOwner(db, c)
+		if !ok {
+			return
+		}
+		limit := 6
+		if value, err := strconv.Atoi(c.Query("limit")); err == nil && value > 0 && value <= 20 {
+			limit = value
+		}
+		// The accounts used in the last three months come first, the total
+		// count breaks the tie for the accounts used long ago.
+		since := time.Now().AddDate(0, 0, -90).Format("2006-01-02 15:04:05")
+		sql := `SELECT t.account_id AS id, a.name AS name, a.identifier AS identifier, a.type AS type,
+			COUNT(*) AS count, SUM(CASE WHEN t.occurred_at >= ? THEN 1 ELSE 0 END) AS recent_count
+			FROM (
+				SELECT account_id, occurred_at FROM personal_transactions
+				WHERE user_id = ? AND account_id > 0
+				UNION ALL
+				SELECT counterpart_account_id AS account_id, occurred_at FROM personal_transactions
+				WHERE user_id = ? AND kind = ? AND counterpart_account_id > 0
+			) t
+			JOIN personal_accounts a ON a.id = t.account_id AND a.user_id = ? AND a.archived = ?
+			GROUP BY t.account_id, a.name, a.identifier, a.type
+			ORDER BY recent_count DESC, count DESC, MAX(t.occurred_at) DESC
+			LIMIT ?`
+		var rows []personalRecentAccount
+		if err := db.Raw(sql, since, ownerID, ownerID, KindTransfer, ownerID, false, limit).Scan(&rows).Error; err != nil {
+			response.ErrorInternal(c, "获取常用账户失败")
+			return
+		}
+		response.Success(c, gin.H{"items": rows})
+	}
 }
 
 func handlePersonalAccountOptions() gin.HandlerFunc {

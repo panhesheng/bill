@@ -91,6 +91,7 @@ func setupRoutes(api *gin.RouterGroup, db *gorm.DB) {
 	group.GET("/personal/flow", handlePersonalFlow(db))
 	group.GET("/personal/export", handleExportPersonal(db))
 	group.GET("/personal/accounts", handleListPersonalAccounts(db))
+	group.GET("/personal/accounts/recent", handleListRecentPersonalAccounts(db))
 	group.GET("/personal/account-options", handlePersonalAccountOptions())
 	group.POST("/personal/accounts", handleCreatePersonalAccount(db))
 	group.PUT("/personal/accounts/order", handleOrderPersonalAccounts(db))

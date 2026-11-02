@@ -152,8 +152,8 @@
           <div class="mt-1 flex items-center justify-between gap-3"><span class="text-muted-foreground">已退金额</span><span>{{ formatMoney(refundSourceInfo.refunded_cents) }}</span></div>
           <div class="mt-1 flex items-center justify-between gap-3"><span class="text-muted-foreground">剩余可退</span><span class="font-semibold text-emerald-600 dark:text-emerald-300">{{ formatMoney(refundSourceInfo.refundable_cents) }}</span></div>
         </div>
-        <label class="form-field"><span>{{ accountFieldLabel }}</span><select v-model.number="form.account_id" required class="input-field"><option :value="0" disabled>请选择账户</option><option v-for="item in accounts" :key="item.id" :value="item.id">{{ accountOptionLabel(item) }}</option></select></label>
-        <label v-if="form.kind === 'transfer'" class="form-field"><span>转入账户</span><select v-model.number="form.counterpart_account_id" required class="input-field"><option :value="0" disabled>请选择转入账户</option><option v-for="item in accounts" :key="item.id" :value="item.id" :disabled="item.id === form.account_id">{{ accountOptionLabel(item) }}</option></select><small v-if="form.account_id" class="text-muted-foreground">转出与转入账户不能相同，转账不计入收入与支出。</small></label>
+        <AccountPicker v-model="form.account_id" :accounts="accounts" :label="accountFieldLabel" />
+        <AccountPicker v-if="form.kind === 'transfer'" v-model="form.counterpart_account_id" :accounts="accounts" label="转入账户" placeholder="请选择转入账户" :disabled-ids="form.account_id ? [form.account_id] : []" :hint="form.account_id ? '转出与转入账户不能相同，转账不计入收入与支出。' : ''" />
         <label class="form-field">
           <span>金额</span>
           <div class="relative"><span class="absolute left-4 top-1/2 -translate-y-1/2 font-semibold text-muted-foreground">¥</span><input v-model="form.amount" required inputmode="decimal" class="input-field pl-9 text-lg font-bold" placeholder="0.00" /></div>
@@ -178,12 +178,13 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useDataShareStore } from '../stores/dataShare'
 import { billingApi, type BillAttachment, type BillKind, type PersonalAccount, type PersonalBillKind, type PersonalCategory, type PersonalLedger, type PersonalTag, type PersonalTransaction, type RefundableTransaction } from '../api/billing'
-import { apiMessage, accountOptionLabel, centsToMoney, formatDate, formatMoney, formatTime, groupTransactionsByDay, moneyToCents, pickDefaultAccountId, readLastAccountId, refundCategory, rememberAccountId, toLocalInput, transferCategory, validateRefundAmount, validateTransferAccounts } from '../utils/billing'
+import { apiMessage, centsToMoney, formatDate, formatMoney, formatTime, groupTransactionsByDay, moneyToCents, pickDefaultAccountId, readLastAccountId, refundCategory, rememberAccountId, toLocalInput, transferCategory, validateRefundAmount, validateTransferAccounts } from '../utils/billing'
 import PageHeader from '../components/PageHeader.vue'
 import MobileFilterDisclosure from '../components/MobileFilterDisclosure.vue'
 import Modal from '../components/Modal.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import Toast from '../components/Toast.vue'
+import AccountPicker from '../components/billing/AccountPicker.vue'
 import CategoryIcon from '../components/billing/CategoryIcon.vue'
 import CategoryPicker from '../components/billing/CategoryPicker.vue'
 import PersonalTagInput from '../components/billing/PersonalTagInput.vue'

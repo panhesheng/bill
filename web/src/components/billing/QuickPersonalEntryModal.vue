@@ -68,22 +68,18 @@
         <div class="mt-1 flex items-center justify-between gap-3"><span class="text-muted-foreground">剩余可退</span><span class="font-semibold text-emerald-600 dark:text-emerald-300">{{ formatMoney(selectedRefundSource.refundable_cents) }}</span></div>
       </div>
 
-      <label class="form-field">
-        <span>{{ accountFieldLabel }}</span>
-        <select v-model.number="form.account_id" required class="input-field" :disabled="resourcesLoading">
-          <option :value="0" disabled>{{ resourcesLoading ? '加载中' : '请选择账户' }}</option>
-          <option v-for="item in accounts" :key="item.id" :value="item.id">{{ accountOptionLabel(item) }}</option>
-        </select>
-      </label>
+      <AccountPicker v-model="form.account_id" :accounts="accounts" :label="accountFieldLabel" :loading="resourcesLoading" />
 
-      <label v-if="form.kind === 'transfer'" class="form-field">
-        <span>转入账户</span>
-        <select v-model.number="form.counterpart_account_id" required class="input-field" :disabled="resourcesLoading">
-          <option :value="0" disabled>{{ resourcesLoading ? '加载中' : '请选择转入账户' }}</option>
-          <option v-for="item in accounts" :key="item.id" :value="item.id" :disabled="item.id === form.account_id">{{ accountOptionLabel(item) }}</option>
-        </select>
-        <small v-if="form.account_id" class="text-muted-foreground">转出与转入账户不能相同，转账不计入收入与支出。</small>
-      </label>
+      <AccountPicker
+        v-if="form.kind === 'transfer'"
+        v-model="form.counterpart_account_id"
+        :accounts="accounts"
+        label="转入账户"
+        placeholder="请选择转入账户"
+        :loading="resourcesLoading"
+        :disabled-ids="form.account_id ? [form.account_id] : []"
+        :hint="form.account_id ? '转出与转入账户不能相同，转账不计入收入与支出。' : ''"
+      />
       <p v-if="!resourcesLoading && !accounts.length" class="rounded-xl bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
         还没有可用账户，请先前往 <RouterLink to="/admin/personal/accounts" class="font-semibold underline">账户管理</RouterLink> 添加。
       </p>
@@ -133,8 +129,9 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { billingApi, type PersonalAccount, type PersonalBillKind, type PersonalCategory, type PersonalLedger, type PersonalTag, type RefundableTransaction } from '../../api/billing'
-import { apiMessage, accountOptionLabel, centsToMoney, formatDate, formatMoney, moneyToCents, pickDefaultAccountId, readLastAccountId, refundCategory, rememberAccountId, toLocalInput, transferCategory, validateRefundAmount, validateTransferAccounts } from '../../utils/billing'
+import { apiMessage, centsToMoney, formatDate, formatMoney, moneyToCents, pickDefaultAccountId, readLastAccountId, refundCategory, rememberAccountId, toLocalInput, transferCategory, validateRefundAmount, validateTransferAccounts } from '../../utils/billing'
 import Modal from '../Modal.vue'
+import AccountPicker from './AccountPicker.vue'
 import CategoryPicker from './CategoryPicker.vue'
 import PersonalTagInput from './PersonalTagInput.vue'
 

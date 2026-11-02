@@ -94,6 +94,17 @@ export interface PersonalAccountOptions {
   card_kinds: Array<{ value: BankCardKind; label: string }>
 }
 
+// PersonalRecentAccount is an account the user records bills with often, the
+// bill form offers them as quick picks.
+export interface PersonalRecentAccount {
+  id: number
+  name: string
+  identifier: string
+  type: PersonalAccountType
+  count: number
+  recent_count: number
+}
+
 export interface BankOption {
   code: string
   name: string
@@ -341,6 +352,7 @@ export const billingApi = {
   personalShareCreate: (data: { user_id?: number; username?: string }) => request.post('/api/billing/personal/shares', data),
   personalShareDelete: (id: number) => request.delete(`/api/billing/personal/shares/${id}`),
   personalAccounts: (includeArchived = false, ownerId = 0) => request.get('/api/billing/personal/accounts', { params: { ...(includeArchived ? { include_archived: true } : {}), ...(ownerId ? { owner_id: ownerId } : {}) } }),
+  personalRecentAccounts: (ownerId = 0, limit = 6) => request.get('/api/billing/personal/accounts/recent', { params: { ...(ownerId ? { owner_id: ownerId } : {}), limit } }),
   personalAccountOptions: () => request.get('/api/billing/personal/account-options'),
   personalAccountCreate: (data: PersonalAccountPayload) => request.post('/api/billing/personal/accounts', data),
   personalAccountOrder: (accountIds: number[]) => request.put('/api/billing/personal/accounts/order', { account_ids: accountIds }),
