@@ -1,5 +1,7 @@
 <template>
   <div class="page-container animate-fade-in">
+    <!-- 手机端滚动时，「记一笔」按钮行和筛选条件行固定在顶部；展开筛选面板时不再固定，避免面板被截断。 -->
+    <div class="-mx-3 -mb-3 space-y-2 bg-background/88 px-3 pb-3 pt-2 backdrop-blur-xl lg:static lg:mx-0 lg:mb-0 lg:space-y-4 lg:bg-transparent lg:p-0 lg:backdrop-blur-none" :class="filtersExpanded ? '' : 'sticky top-16 z-10'">
     <PageHeader title="我的账单" description="每笔账单归入一个个人账本，用标签串联不同场景。">
       <template #actions>
         <RouterLink v-if="!shareStore.isSharedView" to="/admin/personal/settings" class="btn-ghost min-h-11">分类与标签</RouterLink>
@@ -11,23 +13,7 @@
       </template>
     </PageHeader>
 
-    <section v-if="!resourcesLoading && !ledgers.length" class="surface rounded-2xl p-6 sm:p-8">
-      <div class="mx-auto flex max-w-xl flex-col items-center text-center">
-        <span class="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-100 text-brand-700 dark:bg-brand-800 dark:text-accent">
-          <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 6h16v14H4zM8 6V3h8v3m-8 5h8"/></svg>
-        </span>
-        <h2 class="mt-4 font-display text-xl font-bold">先创建一个个人账本</h2>
-        <p class="mt-2 text-sm leading-6 text-muted-foreground">生活、交通或旅行可以分别记账。个人账本始终只属于你，不需要借用共享账本。</p>
-        <RouterLink to="/admin/personal/ledgers" class="btn-brand mt-5 min-h-11">创建个人账本</RouterLink>
-      </div>
-    </section>
-
-    <section v-else-if="!resourcesLoading && !accounts.length" class="surface rounded-2xl p-6 sm:p-8">
-      <div class="mx-auto max-w-xl text-center"><h2 class="font-display text-xl font-bold">先添加一个收支账户</h2><p class="mt-2 text-sm leading-6 text-muted-foreground">个人账单需要明确资金从哪里支出或收入到哪里。银行卡只保存银行名称与卡号后四位。</p><RouterLink to="/admin/personal/accounts" class="btn-brand mt-5 min-h-11">前往账户管理</RouterLink></div>
-    </section>
-
-    <template v-else>
-      <section class="surface rounded-2xl p-3 sm:p-4">
+      <section v-if="showFilters" class="surface rounded-2xl p-3 sm:p-4">
         <MobileFilterDisclosure v-model="filtersExpanded" panel-id="personal-bill-filters" title="筛选账单" :summary="billFilterSummary" :active-count="activeFilterCount">
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
           <label class="filter-field sm:col-span-2 xl:col-span-1"><span>搜索</span><input v-model="filters.q" class="input-field" placeholder="备注或分类" @keyup.enter="applyFilters()" /></label>
@@ -49,51 +35,86 @@
           <p v-if="filterError" class="mt-2 text-sm font-medium text-rose-600" role="alert">{{ filterError }}</p>
         </MobileFilterDisclosure>
       </section>
+    </div>
 
+    <section v-if="!resourcesLoading && !ledgers.length" class="surface rounded-2xl p-6 sm:p-8">
+      <div class="mx-auto flex max-w-xl flex-col items-center text-center">
+        <span class="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-100 text-brand-700 dark:bg-brand-800 dark:text-accent">
+          <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 6h16v14H4zM8 6V3h8v3m-8 5h8"/></svg>
+        </span>
+        <h2 class="mt-4 font-display text-xl font-bold">先创建一个个人账本</h2>
+        <p class="mt-2 text-sm leading-6 text-muted-foreground">生活、交通或旅行可以分别记账。个人账本始终只属于你，不需要借用共享账本。</p>
+        <RouterLink to="/admin/personal/ledgers" class="btn-brand mt-5 min-h-11">创建个人账本</RouterLink>
+      </div>
+    </section>
+
+    <section v-else-if="!resourcesLoading && !accounts.length" class="surface rounded-2xl p-6 sm:p-8">
+      <div class="mx-auto max-w-xl text-center"><h2 class="font-display text-xl font-bold">先添加一个收支账户</h2><p class="mt-2 text-sm leading-6 text-muted-foreground">个人账单需要明确资金从哪里支出或收入到哪里。银行卡只保存银行名称与卡号后四位。</p><RouterLink to="/admin/personal/accounts" class="btn-brand mt-5 min-h-11">前往账户管理</RouterLink></div>
+    </section>
+
+    <template v-else>
       <section class="surface overflow-hidden rounded-2xl">
         <div v-if="loading" class="space-y-3 p-5"><div v-for="n in 6" :key="n" class="h-16 animate-pulse rounded-xl bg-muted"></div></div>
         <div v-else-if="!items.length" class="empty-state h-72"><span>没有找到符合条件的账单</span><button class="mt-4 min-h-11 text-sm font-semibold text-brand-600" @click="openCreate">记下第一笔</button></div>
         <template v-else>
           <div class="hidden overflow-x-auto lg:block">
             <table class="data-table">
-              <thead><tr><th>日期</th><th>账本 / 账户</th><th>分类 / 备注</th><th>标签</th><th class="text-right">金额</th><th class="w-24 text-right">操作</th></tr></thead>
-              <tbody><tr v-for="item in items" :key="item.id">
-                <td class="whitespace-nowrap text-sm text-muted-foreground">{{ formatDate(item.occurred_at) }}</td>
-                <td><div class="flex flex-col items-start gap-1"><span class="badge bg-brand-100 text-brand-700 dark:bg-brand-800 dark:text-accent">{{ ledgerName(item) }}</span><span class="text-xs text-muted-foreground">{{ accountLabel(item) }}</span></div></td>
-                <td><div class="flex items-start gap-3"><span :class="kindBadgeClass(item)" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"><CategoryIcon :category="item.category" :kind="item.kind" class="h-4 w-4" /></span><div class="min-w-0"><div class="font-semibold">{{ item.category }}</div><div v-if="isRefund(item) && item.refund_source_category" class="mt-0.5 text-xs text-muted-foreground">退款自：{{ item.refund_source_category }} · {{ formatMoney(item.refund_source_amount_cents || 0) }}</div><div v-if="item.note" class="mt-0.5 max-w-sm truncate text-xs text-muted-foreground">{{ item.note }}</div><BillAttachments v-if="item.attachments?.length" class="mt-2" :model-value="item.attachments" readonly compact /></div></div></td>
-                <td><div class="flex max-w-xs flex-wrap gap-1"><span v-for="tag in item.tags || []" :key="tag.id" class="badge border border-border bg-muted">{{ tag.name }}</span><span v-if="!item.tags?.length" class="text-xs text-muted-foreground">—</span></div></td>
-                <td :class="kindAmountClass(item)" class="text-right font-bold tabular-nums">{{ amountPrefix(item) }}{{ formatMoney(item.amount_cents) }}</td>
-                <td><div v-if="!shareStore.isSharedView" class="flex justify-end gap-1"><button class="icon-button" aria-label="编辑账单" @click="openEdit(item)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20h4L19 9l-4-4L4 16v4z"/></svg></button><button class="icon-button text-rose-600" aria-label="删除账单" @click="askDelete(item)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M9 7V4h6v3m-9 0 1 14h10l1-14"/></svg></button></div></td>
-              </tr></tbody>
+              <thead><tr><th>时间</th><th>账本 / 账户</th><th>分类 / 备注</th><th>标签</th><th class="text-right">金额</th><th class="w-24 text-right">操作</th></tr></thead>
+              <tbody>
+                <template v-for="group in groupedItems" :key="group.key">
+                  <tr class="bg-brand-50/70 hover:bg-brand-50 dark:bg-brand-900/25 dark:hover:bg-brand-900/35">
+                    <td colspan="6" class="px-5 py-2.5">
+                      <div class="flex items-center justify-between gap-3">
+                        <span class="flex items-center gap-2 font-display text-sm font-bold text-foreground">{{ group.label }}<span v-if="group.relative" class="badge bg-brand-100 text-brand-700 dark:bg-brand-800 dark:text-accent">{{ group.relative }}</span></span>
+                        <span class="shrink-0 text-xs font-semibold text-muted-foreground">{{ group.items.length }} 笔</span>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr v-for="item in group.items" :key="item.id">
+                    <td class="whitespace-nowrap text-sm text-muted-foreground">{{ formatTime(item.occurred_at) }}</td>
+                    <td><div class="flex flex-col items-start gap-1"><span class="badge bg-brand-100 text-brand-700 dark:bg-brand-800 dark:text-accent">{{ ledgerName(item) }}</span><span class="text-xs text-muted-foreground">{{ accountLabel(item) }}</span></div></td>
+                    <td><div class="flex items-start gap-3"><span :class="kindBadgeClass(item)" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"><CategoryIcon :category="item.category" :kind="item.kind" class="h-4 w-4" /></span><div class="min-w-0"><div class="font-semibold">{{ item.category }}</div><div v-if="isRefund(item) && item.refund_source_category" class="mt-0.5 text-xs text-muted-foreground">退款自：{{ item.refund_source_category }} · {{ formatMoney(item.refund_source_amount_cents || 0) }}</div><div v-if="item.note" class="mt-0.5 max-w-sm truncate text-xs text-muted-foreground">{{ item.note }}</div><BillAttachments v-if="item.attachments?.length" class="mt-2" :model-value="item.attachments" readonly compact /></div></div></td>
+                    <td><div class="flex max-w-xs flex-wrap gap-1"><span v-for="tag in item.tags || []" :key="tag.id" class="badge border border-border bg-muted">{{ tag.name }}</span><span v-if="!item.tags?.length" class="text-xs text-muted-foreground">—</span></div></td>
+                    <td :class="kindAmountClass(item)" class="text-right font-bold tabular-nums">{{ amountPrefix(item) }}{{ formatMoney(item.amount_cents) }}</td>
+                    <td><div v-if="!shareStore.isSharedView" class="flex justify-end gap-1"><button class="icon-button" aria-label="编辑账单" @click="openEdit(item)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20h4L19 9l-4-4L4 16v4z"/></svg></button><button class="icon-button text-rose-600" aria-label="删除账单" @click="askDelete(item)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M9 7V4h6v3m-9 0 1 14h10l1-14"/></svg></button></div></td>
+                  </tr>
+                </template>
+              </tbody>
             </table>
           </div>
-          <div class="divide-y divide-border lg:hidden">
-            <article v-for="item in items" :key="item.id" class="px-3 py-2 transition-colors active:bg-muted/50">
-              <div class="flex items-start gap-2">
-                <span :class="kindBadgeClass(item, true)" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg">
-                  <CategoryIcon :category="item.category" :kind="item.kind" class="h-4 w-4" />
-                </span>
-                <div class="min-w-0 flex-1">
-                  <div class="flex flex-wrap items-center gap-1">
-                    <h3 class="text-[15px] font-semibold leading-5">{{ item.category }}</h3>
-                    <span class="badge bg-brand-100 px-2 py-0.5 leading-4 text-brand-700 dark:bg-brand-800 dark:text-accent">{{ ledgerName(item) }}</span>
-                  </div>
-                  <p class="truncate text-xs leading-4 text-muted-foreground">{{ accountLabel(item) }} · {{ isRefund(item) && item.refund_source_category ? `退款自${item.refund_source_category}` : item.note || formatDate(item.occurred_at) }}</p>
-                  <div v-if="item.tags?.length" class="mt-1 flex flex-wrap gap-1">
-                    <span v-for="tag in item.tags" :key="tag.id" class="badge border border-border bg-muted px-2 py-0.5 leading-4">{{ tag.name }}</span>
-                  </div>
-                  <BillAttachments v-if="item.attachments?.length" class="mt-1" :model-value="item.attachments" readonly compact />
-                </div>
-                <strong :class="kindAmountClass(item)" class="shrink-0 whitespace-nowrap text-[15px] leading-5 tabular-nums">{{ amountPrefix(item) }}{{ formatMoney(item.amount_cents) }}</strong>
+          <div class="lg:hidden">
+            <template v-for="group in groupedItems" :key="group.key">
+              <div class="flex items-center justify-between gap-2 border-t-2 border-brand-500/60 bg-brand-50/80 px-3 py-2 dark:bg-brand-900/30">
+                <span class="flex items-center gap-2 font-display text-sm font-bold text-foreground">{{ group.label }}<span v-if="group.relative" class="badge bg-brand-100 text-brand-700 dark:bg-brand-800 dark:text-accent">{{ group.relative }}</span></span>
+                <span class="shrink-0 text-xs font-semibold text-muted-foreground">{{ group.items.length }} 笔</span>
               </div>
-              <div class="mt-0.5 flex items-center justify-between">
-                <span class="text-xs leading-4 text-muted-foreground">{{ formatDate(item.occurred_at) }}</span>
-                <div v-if="!shareStore.isSharedView" class="flex">
-                  <button class="icon-button text-brand-600" aria-label="编辑账单" @click="openEdit(item)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20h4L19 9l-4-4L4 16v4z"/></svg></button>
-                  <button class="icon-button text-rose-600" aria-label="删除账单" @click="askDelete(item)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M9 7V4h6v3m-9 0 1 14h10l1-14"/></svg></button>
+              <article v-for="item in group.items" :key="item.id" class="border-b border-border px-3 py-2 transition-colors last:border-b-0 active:bg-muted/50">
+                <div class="flex items-start gap-2">
+                  <span :class="kindBadgeClass(item, true)" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg">
+                    <CategoryIcon :category="item.category" :kind="item.kind" class="h-4 w-4" />
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex flex-wrap items-center gap-1">
+                      <h3 class="text-[15px] font-semibold leading-5">{{ item.category }}</h3>
+                      <span class="badge bg-brand-100 px-2 py-0.5 leading-4 text-brand-700 dark:bg-brand-800 dark:text-accent">{{ ledgerName(item) }}</span>
+                    </div>
+                    <p class="truncate text-xs leading-4 text-muted-foreground">{{ accountLabel(item) }} · {{ isRefund(item) && item.refund_source_category ? `退款自${item.refund_source_category}` : item.note || formatTime(item.occurred_at) }}</p>
+                    <div v-if="item.tags?.length" class="mt-1 flex flex-wrap gap-1">
+                      <span v-for="tag in item.tags" :key="tag.id" class="badge border border-border bg-muted px-2 py-0.5 leading-4">{{ tag.name }}</span>
+                    </div>
+                    <BillAttachments v-if="item.attachments?.length" class="mt-1" :model-value="item.attachments" readonly compact />
+                  </div>
+                  <strong :class="kindAmountClass(item)" class="shrink-0 whitespace-nowrap text-[15px] leading-5 tabular-nums">{{ amountPrefix(item) }}{{ formatMoney(item.amount_cents) }}</strong>
                 </div>
-              </div>
-            </article>
+                <div class="mt-0.5 flex items-center justify-between">
+                  <span class="text-xs leading-4 text-muted-foreground">{{ formatTime(item.occurred_at) }}</span>
+                  <div v-if="!shareStore.isSharedView" class="flex">
+                    <button class="icon-button text-brand-600" aria-label="编辑账单" @click="openEdit(item)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20h4L19 9l-4-4L4 16v4z"/></svg></button>
+                    <button class="icon-button text-rose-600" aria-label="删除账单" @click="askDelete(item)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M9 7V4h6v3m-9 0 1 14h10l1-14"/></svg></button>
+                  </div>
+                </div>
+              </article>
+            </template>
           </div>
           <div class="flex items-center justify-between border-t border-border px-3 py-2.5 sm:px-4 sm:py-3"><span class="text-xs text-muted-foreground">共 {{ total }} 笔</span><div class="flex gap-2"><button class="btn-ghost min-h-11 px-3" :disabled="page <= 1" @click="changePage(page - 1)">上一页</button><button class="btn-ghost min-h-11 px-3" :disabled="page * pageSize >= total" @click="changePage(page + 1)">下一页</button></div></div>
         </template>
@@ -157,7 +178,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useDataShareStore } from '../stores/dataShare'
 import { billingApi, type BillAttachment, type BillKind, type PersonalAccount, type PersonalBillKind, type PersonalCategory, type PersonalLedger, type PersonalTag, type PersonalTransaction, type RefundableTransaction } from '../api/billing'
-import { apiMessage, accountOptionLabel, centsToMoney, formatDate, formatMoney, moneyToCents, pickDefaultAccountId, readLastAccountId, refundCategory, rememberAccountId, toLocalInput, transferCategory, validateRefundAmount, validateTransferAccounts } from '../utils/billing'
+import { apiMessage, accountOptionLabel, centsToMoney, formatDate, formatMoney, formatTime, groupTransactionsByDay, moneyToCents, pickDefaultAccountId, readLastAccountId, refundCategory, rememberAccountId, toLocalInput, transferCategory, validateRefundAmount, validateTransferAccounts } from '../utils/billing'
 import PageHeader from '../components/PageHeader.vue'
 import MobileFilterDisclosure from '../components/MobileFilterDisclosure.vue'
 import Modal from '../components/Modal.vue'
@@ -183,6 +204,10 @@ const filtersExpanded = ref(false)
 const filterError = ref('')
 const activeFilterCount = computed(() => Object.values(filters).filter(value => String(value).trim() !== '').length)
 const billFilterSummary = computed(() => activeFilterCount.value ? `已启用 ${activeFilterCount.value} 项条件` : '按账本、账户、日期等查找')
+// The filter panel only shows up when there is something to filter.
+const showFilters = computed(() => !resourcesLoading.value && ledgers.value.length > 0 && accounts.value.length > 0)
+// The bills are grouped by day, so every day can be checked on its own.
+const groupedItems = computed(() => groupTransactionsByDay(items.value))
 const showForm = ref(false), showDelete = ref(false)
 const editing = ref<PersonalTransaction | null>(null), deleting = ref<PersonalTransaction | null>(null)
 const formError = ref('')

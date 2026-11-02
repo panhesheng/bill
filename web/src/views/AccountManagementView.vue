@@ -1,6 +1,6 @@
 <template>
   <div class="page-container animate-fade-in">
-    <PageHeader title="账户管理" description="管理记账使用的银行卡、微信、支付宝和现金账户。银行卡号可以稍后补充，填写后也不会保存完整号码。">
+    <PageHeader title="账户管理" description="管理记账使用的银行卡、微信、支付宝和现金账户。银行卡号可以稍后补充，填写后也不会保存完整号码；也可以只写备注来区分账户。">
       <template #actions><button v-if="!shareStore.isSharedView" class="btn-brand min-h-11 w-full sm:w-auto" @click="openCreate">添加账户</button></template>
     </PageHeader>
     <div class="grid gap-2 sm:gap-3 lg:grid-cols-2">
@@ -27,7 +27,7 @@
           <div class="min-w-0 flex-1"><div class="flex items-center gap-1.5"><h3 class="truncate font-display text-base font-bold sm:text-lg">{{ account.name }}</h3><span v-if="account.archived" class="badge shrink-0 bg-muted text-muted-foreground">已归档</span></div><p class="mt-0.5 truncate text-xs text-muted-foreground sm:mt-1 sm:text-sm">{{ accountDetail(account) }}</p></div>
           <div class="shrink-0 text-right sm:w-full sm:pt-1"><p class="text-[11px] leading-none text-muted-foreground">余额</p><p :class="(account.balance_cents || 0) >= 0 ? 'text-foreground' : 'text-rose-600'" class="mt-1 font-display text-base font-bold tabular-nums sm:text-2xl">{{ formatMoney(account.balance_cents || 0) }}</p></div>
         </div>
-        <div class="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-border pt-2 sm:mt-4 sm:pt-4"><span class="inline-flex items-center gap-1 text-xs text-muted-foreground">已关联 {{ account.transaction_count || 0 }} 笔账单<svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="m9 18 6-6-6-6" /></svg></span><div v-if="!shareStore.isSharedView" class="flex items-center gap-1"><button v-if="!account.archived" class="min-h-10 px-2 text-sm font-semibold text-brand-600 sm:min-h-11" @click.stop="openEdit(account)">编辑</button><button v-if="!account.archived" class="min-h-10 px-2 text-sm font-semibold text-rose-600 sm:min-h-11" @click.stop="askArchive(account)">归档</button><button v-else class="min-h-10 px-2 text-sm font-semibold text-brand-600 sm:min-h-11" @click.stop="restore(account)">恢复</button><button v-if="account.can_delete" class="min-h-10 px-2 text-sm font-semibold text-rose-600 sm:min-h-11" @click.stop="askDelete(account)">删除</button><span v-else class="px-1 text-xs text-muted-foreground">已关联账单，仅可归档</span></div></div>
+        <div class="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-border pt-2 sm:mt-4 sm:pt-4"><span class="inline-flex items-center gap-1 text-xs text-muted-foreground">已关联 {{ account.transaction_count || 0 }} 笔账单<svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="m9 18 6-6-6-6" /></svg></span><div v-if="!shareStore.isSharedView" class="flex items-center gap-1"><button v-if="!account.archived" class="min-h-10 px-2 text-sm font-semibold text-brand-600 sm:min-h-11" @click.stop="openEdit(account)">编辑</button><button v-if="!account.archived" class="min-h-10 px-2 text-sm font-semibold text-rose-600 sm:min-h-11" @click.stop="askArchive(account)">归档</button><button v-else class="min-h-10 px-2 text-sm font-semibold text-brand-600 sm:min-h-11" @click.stop="restore(account)">恢复</button><button v-if="account.can_delete" class="min-h-10 px-2 text-sm font-semibold text-rose-600 sm:min-h-11" @click.stop="askDelete(account)">删除</button><span v-else class="px-1 text-xs text-muted-foreground">仅可归档</span></div></div>
       </article>
     </section>
     <Modal v-model="showForm" :title="editing ? '编辑账户' : '添加账户'">
@@ -39,7 +39,7 @@
         <template v-if="form.type === 'bank_card'">
           <fieldset><legend class="text-sm font-semibold">银行卡类型</legend><div class="mt-2 grid grid-cols-2 gap-2 rounded-xl bg-muted p-1"><button v-for="option in cardKinds" :key="option.value" type="button" :aria-pressed="form.card_kind === option.value" :class="form.card_kind === option.value ? 'bg-surface text-foreground shadow-sm' : 'text-muted-foreground'" class="min-h-11 touch-manipulation rounded-lg text-sm font-semibold" @click="form.card_kind = option.value">{{ option.label }}</button></div></fieldset>
           <label class="form-field"><span>开户银行</span><BankPicker v-model="form.institution" :banks="banks" :loading="optionsLoading" /></label>
-          <label class="form-field"><span>{{ editing?.type === 'bank_card' && editing.identifier ? '更换银行卡号' : '银行卡号' }} <small>可选</small></span><input :value="form.card_number" inputmode="numeric" autocomplete="off" enterkeyhint="done" maxlength="23" class="input-field font-mono tracking-wider" :placeholder="editing?.type === 'bank_card' && editing.identifier ? `当前尾号 ${editing.identifier}，留空不变` : '可暂不填写，后期再补充'" aria-describedby="card-number-help" @input="onCardInput" @blur="validateCardInput" /><small id="card-number-help" :class="cardError ? 'text-rose-600' : 'text-muted-foreground'">{{ cardError || (editing?.type === 'bank_card' && editing.identifier ? '输入新卡号后会重新校验和验重。' : '留空可直接保存；填写后仅保留安全指纹与后四位。') }}</small></label>
+          <label class="form-field"><span>{{ editing?.type === 'bank_card' && editingCardIdentity ? `更换${editingCardIdentity}` : '银行卡号或备注' }} <small>可选</small></span><input :value="form.card_number" autocomplete="off" enterkeyhint="done" maxlength="64" class="input-field" :placeholder="editing?.type === 'bank_card' && editingCardIdentity ? `当前 ${editingCardIdentity}，留空不变` : '可填银行卡号，也可以只写备注，如「工资卡」'" aria-describedby="card-number-help" @input="onCardInput" @blur="validateCardInput" /><small id="card-number-help" :class="cardError ? 'text-rose-600' : 'text-muted-foreground'">{{ cardError || (editing?.type === 'bank_card' && editingCardIdentity ? '填写新的卡号或备注后会覆盖当前记录。' : '填写 12 至 19 位银行卡号会校验并只保留后四位；也可以只写备注来区分账户。') }}</small></label>
         </template>
         <label v-else class="form-field"><span>{{ form.type === 'cash' ? '备注' : '账号备注' }} <small>可选</small></span><input v-model.trim="form.identifier" maxlength="64" class="input-field" :placeholder="form.type === 'cash' ? '例如：随身钱包' : '用于区分多个同类账户，不建议填写完整账号'" /></label>
         <p class="rounded-xl bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground">请勿填写密码、验证码、支付口令等敏感信息。重复银行卡会在保存时提示。</p>
@@ -111,6 +111,9 @@ function openBills(account: PersonalAccount) { router.push({ path: '/admin/perso
 // The placeholder of the name field follows the selected type, so the user
 // immediately knows what to write down.
 const namePlaceholder = computed(() => (form.type === 'bank_card' ? '例如：工资卡' : form.type === 'wechat' ? '例如：日常微信' : form.type === 'alipay' ? '例如：生活支付宝' : '例如：现金钱包'))
+// The identity of the card that is being edited, either the last four digits
+// of the card number or the note the user wrote.
+const editingCardIdentity = computed(() => editing.value?.type === 'bank_card' ? cardIdentityText(editing.value.identifier) : '')
 const summaries = computed(() => types.map(type => ({ ...type, type: type.value, count: accounts.value.filter(item => item.type === type.value && !item.archived).length })))
 // The total balance only counts accounts that are still in use.
 const totalBalance = computed(() => accounts.value.filter(item => !item.archived).reduce((sum, item) => sum + (item.balance_cents || 0), 0))
@@ -119,18 +122,47 @@ function notify(message: string, type: 'success' | 'error' = 'success') { toast.
 function typeIcon(type: PersonalAccountType) { return icons[type] }
 function typeStyle(type: PersonalAccountType) { return type === 'bank_card' ? 'bg-brand-100 text-brand-700 dark:bg-brand-800 dark:text-accent' : type === 'wechat' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : type === 'alipay' ? 'bg-sky-500/10 text-sky-700 dark:text-sky-300' : 'bg-amber-500/10 text-amber-700 dark:text-amber-300' }
 function cardKindLabel(kind?: BankCardKind) { return cardKinds.value.find(item => item.value === kind)?.label || '银行卡' }
-function accountDetail(item: PersonalAccount) { const base = item.type === 'bank_card' ? `${item.institution} · ${cardKindLabel(item.card_kind)} · ${item.identifier ? `尾号 ${item.identifier}` : '未填写卡号'}` : item.institution; return item.type !== 'bank_card' && item.identifier ? `${base} · ${item.identifier}` : base }
+// A bank card either keeps the last four digits of the card number or a note
+// the user typed instead of a card number.
+function isCardTail(value: string) { return /^\d{4}$/.test(value || '') }
+function cardIdentityText(value: string) { return !value ? '' : isCardTail(value) ? `尾号 ${value}` : `备注 ${value}` }
+function accountDetail(item: PersonalAccount) {
+  if (item.type === 'bank_card') return `${item.institution} · ${cardKindLabel(item.card_kind)} · ${cardIdentityText(item.identifier) || '未填写卡号'}`
+  return item.identifier ? `${item.institution} · ${item.identifier}` : item.institution
+}
 function bankByName(name: string) { return banks.value.find(bank => bank.name === name) }
 function selectType(type: PersonalAccountType) { form.type = type; form.institution = type === 'wechat' ? '微信' : type === 'alipay' ? '支付宝' : type === 'cash' ? '现金' : ''; form.identifier = ''; form.card_number = ''; form.card_kind = 'debit'; cardError.value = '' }
 function openCreate() { if (shareStore.isSharedView) return; editing.value = null; Object.assign(form, { type: 'bank_card', name: '', institution: '', identifier: '', card_kind: 'debit', card_number: '', opening_balance: '' }); formError.value = ''; cardError.value = ''; showForm.value = true }
 function openEdit(item: PersonalAccount) { if (shareStore.isSharedView) return; editing.value = item; Object.assign(form, { type: item.type, name: item.name, institution: item.institution, identifier: item.identifier, card_kind: item.card_kind || 'debit', card_number: '', opening_balance: '' }); formError.value = ''; cardError.value = ''; showForm.value = true }
-function cardDigits() { return form.card_number.replace(/\D/g, '') }
-function onCardInput(event: Event) { const input = event.target as HTMLInputElement; const digits = input.value.replace(/\D/g, '').slice(0, 19); form.card_number = digits.replace(/(\d{4})(?=\d)/g, '$1 '); input.value = form.card_number; cardError.value = '' }
+// The card number field accepts free text: a full card number is verified and
+// reduced to its last four digits, anything else is stored as a note.
+function onCardInput(event: Event) {
+  const input = event.target as HTMLInputElement
+  const raw = input.value
+  // While the field only holds digits, they are grouped in blocks of four.
+  if (/^[\s\d-]+$/.test(raw)) {
+    const compact = raw.replace(/\D/g, '').slice(0, 19)
+    form.card_number = compact.replace(/(\d{4})(?=\d)/g, '$1 ')
+  } else {
+    form.card_number = raw.slice(0, 64)
+  }
+  input.value = form.card_number
+  cardError.value = ''
+}
 function validLuhn(value: string) { let sum = 0, double = false; for (let i = value.length - 1; i >= 0; i--) { let digit = Number(value[i]); if (double) { digit *= 2; if (digit > 9) digit -= 9 } sum += digit; double = !double } return sum % 10 === 0 }
-function validateCardInput() { const digits = cardDigits(); if (!digits) { cardError.value = ''; return true } if (digits.length < 12 || digits.length > 19) { cardError.value = '请输入 12 至 19 位银行卡号'; return false } if (!validLuhn(digits)) { cardError.value = '银行卡号校验失败，请检查后重试'; return false } cardError.value = ''; return true }
+function validateCardInput() {
+  const value = form.card_number.trim()
+  if (!value) { cardError.value = ''; return true }
+  const digits = value.replace(/\D/g, '')
+  const looksLikeNumber = /^[\s\d-]+$/.test(value) && digits.length > 0
+  // Only a full card number is verified, anything else is a note.
+  if (!looksLikeNumber || digits.length < 12 || digits.length > 19) { cardError.value = ''; return true }
+  if (!validLuhn(digits)) { cardError.value = '银行卡号校验失败，请检查后重试'; return false }
+  cardError.value = ''; return true
+}
 async function load() { loading.value = true; try { const res = await billingApi.personalAccounts(true, shareStore.currentOwnerId); accounts.value = res.data?.data || [] } catch (error) { notify(apiMessage(error, '账户加载失败'), 'error') } finally { loading.value = false } }
 async function loadOptions() { optionsLoading.value = true; try { const res = await billingApi.personalAccountOptions(); banks.value = res.data?.data?.banks || []; cardKinds.value = res.data?.data?.card_kinds || fallbackCardKinds } catch (error) { notify(apiMessage(error, '银行列表加载失败'), 'error') } finally { optionsLoading.value = false } }
-async function save() { if (shareStore.isSharedView) return; if (form.type === 'bank_card' && !form.institution) { formError.value = '请选择开户银行'; return } if (form.type === 'bank_card' && !validateCardInput()) return; const openingBalance = moneyToCents(form.opening_balance); if (editing.value) { saving.value = true; formError.value = ''; try { const payload = { type: form.type, name: form.name, institution: form.institution, identifier: form.type === 'bank_card' ? '' : form.identifier, card_kind: form.type === 'bank_card' ? form.card_kind : undefined, card_number: form.type === 'bank_card' ? cardDigits() : undefined }; await billingApi.personalAccountUpdate(editing.value.id, payload); showForm.value = false; notify('账户已更新'); await load() } catch (error) { formError.value = apiMessage(error) } finally { saving.value = false } return } saving.value = true; formError.value = ''; try { const payload = { type: form.type, name: form.name, institution: form.institution, identifier: form.type === 'bank_card' ? '' : form.identifier, card_kind: form.type === 'bank_card' ? form.card_kind : undefined, card_number: form.type === 'bank_card' ? cardDigits() : undefined, opening_balance_cents: openingBalance }; await billingApi.personalAccountCreate(payload); showForm.value = false; notify('账户已添加'); await load() } catch (error) { formError.value = apiMessage(error) } finally { saving.value = false } }
+async function save() { if (shareStore.isSharedView) return; if (form.type === 'bank_card' && !form.institution) { formError.value = '请选择开户银行'; return } if (form.type === 'bank_card' && !validateCardInput()) return; const openingBalance = moneyToCents(form.opening_balance); if (editing.value) { saving.value = true; formError.value = ''; try { const payload = { type: form.type, name: form.name, institution: form.institution, identifier: form.type === 'bank_card' ? '' : form.identifier, card_kind: form.type === 'bank_card' ? form.card_kind : undefined, card_number: form.type === 'bank_card' ? form.card_number.trim() : undefined }; await billingApi.personalAccountUpdate(editing.value.id, payload); showForm.value = false; notify('账户已更新'); await load() } catch (error) { formError.value = apiMessage(error) } finally { saving.value = false } return } saving.value = true; formError.value = ''; try { const payload = { type: form.type, name: form.name, institution: form.institution, identifier: form.type === 'bank_card' ? '' : form.identifier, card_kind: form.type === 'bank_card' ? form.card_kind : undefined, card_number: form.type === 'bank_card' ? form.card_number.trim() : undefined, opening_balance_cents: openingBalance }; await billingApi.personalAccountCreate(payload); showForm.value = false; notify('账户已添加'); await load() } catch (error) { formError.value = apiMessage(error) } finally { saving.value = false } }
 function askArchive(item: PersonalAccount) { if (shareStore.isSharedView) return; archiving.value = item; showArchive.value = true }
 async function archive() { if (shareStore.isSharedView) return; if (!archiving.value) return; try { await billingApi.personalAccountArchive(archiving.value.id); notify('账户已归档'); await load() } catch (error) { notify(apiMessage(error), 'error') } }
 function askDelete(item: PersonalAccount) { if (shareStore.isSharedView) return; deleting.value = item; showDelete.value = true }

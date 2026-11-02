@@ -68,7 +68,7 @@
               <div class="flex items-center gap-1">
                 <button type="button" class="min-h-11 rounded-full px-3 text-sm font-bold text-rose-600 disabled:pointer-events-none disabled:opacity-35" :disabled="ledger.is_default" :title="ledger.is_default ? '默认账本不能归档' : undefined" @click="askArchive(ledger)">归档</button>
                 <button v-if="ledger.can_delete" type="button" class="min-h-11 rounded-full px-3 text-sm font-bold text-rose-600" @click="askDelete(ledger)">删除</button>
-                <span v-else-if="!ledger.is_default" class="px-1 text-xs text-muted-foreground">已关联账单，仅可归档</span>
+                <span v-else-if="!ledger.is_default" class="px-1 text-xs text-muted-foreground">仅可归档</span>
               </div>
             </div>
           </div>

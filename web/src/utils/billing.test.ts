@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { accountOptionLabel, centsToMoney, isSplitValid, moneyToCents, pickDefaultAccountId, refundCategory, splitByWeights, splitEqually, splitExactly, transferCategory, validateRefundAmount, validateTransferAccounts } from './billing'
+import { accountOptionLabel, centsToMoney, formatTime, groupTransactionsByDay, isSplitValid, moneyToCents, pickDefaultAccountId, refundCategory, splitByWeights, splitEqually, splitExactly, transferCategory, validateRefundAmount, validateTransferAccounts } from './billing'
 
 describe('money conversion', () => {
   it('converts decimal money without floating point leakage', () => {
@@ -125,5 +125,46 @@ describe('refund amount validation', () => {
   it('rejects a non positive amount', () => {
     expect(validateRefundAmount(0, 10000)).toBe('请输入大于 0 的金额')
     expect(validateRefundAmount(-100, 10000)).toBe('请输入大于 0 的金额')
+  })
+})
+
+describe('bills grouped by day', () => {
+  const now = new Date('2026-11-02T10:00:00')
+
+  it('puts the bills of the same day into one group', () => {
+    const groups = groupTransactionsByDay([
+      { id: 1, occurred_at: '2026-11-02T08:30:00' },
+      { id: 2, occurred_at: '2026-11-02T20:15:00' },
+      { id: 3, occurred_at: '2026-11-01T12:00:00' },
+    ], now)
+    expect(groups.map(group => group.key)).toEqual(['2026-11-02', '2026-11-01'])
+    expect(groups[0].items.map(item => item.id)).toEqual([1, 2])
+    expect(groups[1].items.map(item => item.id)).toEqual([3])
+  })
+
+  it('labels every group with the date and the weekday', () => {
+    const groups = groupTransactionsByDay([{ id: 1, occurred_at: '2026-11-02T08:30:00' }], now)
+    expect(groups[0].label).toBe('11月2日 周一')
+    expect(groups[0].relative).toBe('今天')
+  })
+
+  it('marks yesterday and keeps other years visible', () => {
+    const groups = groupTransactionsByDay([
+      { id: 1, occurred_at: '2026-11-01T08:30:00' },
+      { id: 2, occurred_at: '2025-12-31T08:30:00' },
+    ], now)
+    expect(groups[0].relative).toBe('昨天')
+    expect(groups[1].relative).toBe('')
+    expect(groups[1].label.startsWith('2025年')).toBe(true)
+  })
+
+  it('skips bills without a valid time', () => {
+    const groups = groupTransactionsByDay([{ id: 1, occurred_at: 'not a date' }], now)
+    expect(groups).toEqual([])
+  })
+
+  it('shows the time of a bill without the date', () => {
+    expect(formatTime('2026-11-02T08:30:00')).toBe('08:30')
+    expect(formatTime('')).toBe('')
   })
 })

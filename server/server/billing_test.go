@@ -195,6 +195,16 @@ func TestPersonalLedgersCategoriesTagsAndLegacyMigration(t *testing.T) {
 	if cardNumberAddedData["identifier"] != "1117" {
 		t.Fatalf("later card number update failed: %s", cardNumberAdded.Body.String())
 	}
+	cardWithNote := doJSON(r, http.MethodPost, "/api/billing/personal/accounts", aliceToken, map[string]interface{}{"type": "bank_card", "name": "备注卡", "institution": "招商银行", "card_kind": "debit", "card_number": "工资卡"})
+	cardWithNoteData := billingData(t, cardWithNote.Code, cardWithNote.Body.String())
+	if cardWithNoteData["identifier"] != "工资卡" || strings.Contains(cardWithNote.Body.String(), "card_fingerprint") {
+		t.Fatalf("bank card note was not kept as a remark: %s", cardWithNote.Body.String())
+	}
+	cardWithShortNote := doJSON(r, http.MethodPost, "/api/billing/personal/accounts", aliceToken, map[string]interface{}{"type": "bank_card", "name": "尾号卡", "institution": "招商银行", "card_kind": "debit", "card_number": "1234"})
+	cardWithShortNoteData := billingData(t, cardWithShortNote.Code, cardWithShortNote.Body.String())
+	if cardWithShortNoteData["identifier"] != "1234" || strings.Contains(cardWithShortNote.Body.String(), "card_fingerprint") {
+		t.Fatalf("short bank card note was not kept as a remark: %s", cardWithShortNote.Body.String())
+	}
 	accountCreated := doJSON(r, http.MethodPost, "/api/billing/personal/accounts", aliceToken, map[string]interface{}{"type": "bank_card", "name": "工资卡", "institution": "招商银行", "card_kind": "debit", "card_number": "4111 1111 1111 1111"})
 	accountData := billingData(t, accountCreated.Code, accountCreated.Body.String())
 	accountID := uint(accountData["id"].(float64))

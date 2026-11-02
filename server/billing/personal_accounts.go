@@ -169,20 +169,34 @@ func normalizePersonalAccount(req personalAccountRequest) (PersonalAccount, erro
 	return account, nil
 }
 
-func normalizeCardNumber(value string) (string, error) {
-	value = strings.NewReplacer(" ", "", "-", "").Replace(strings.TrimSpace(value))
-	if len(value) < 12 || len(value) > 19 {
-		return "", errors.New("请输入 12 至 19 位银行卡号")
+// cardNumberDigits returns the digits of a value that only holds digits,
+// spaces and dashes. The second return value is false when the value holds
+// anything else, which means the user typed a note instead of a card number.
+func cardNumberDigits(value string) (string, bool) {
+	compact := strings.NewReplacer(" ", "", "-", "").Replace(strings.TrimSpace(value))
+	if compact == "" {
+		return "", false
 	}
-	for _, char := range value {
+	for _, char := range compact {
 		if char < '0' || char > '9' {
-			return "", errors.New("银行卡号只能包含数字")
+			return "", false
 		}
 	}
-	if !validLuhn(value) {
+	return compact, true
+}
+
+func normalizeCardNumber(value string) (string, error) {
+	digits, ok := cardNumberDigits(value)
+	if !ok {
+		return "", errors.New("银行卡号只能包含数字")
+	}
+	if len(digits) < 12 || len(digits) > 19 {
+		return "", errors.New("请输入 12 至 19 位银行卡号")
+	}
+	if !validLuhn(digits) {
 		return "", errors.New("银行卡号校验失败，请检查后重试")
 	}
-	return value, nil
+	return digits, nil
 }
 
 func validLuhn(value string) bool {
@@ -211,8 +225,22 @@ func cardFingerprint(db *gorm.DB, cardNumber string) (string, error) {
 	return hex.EncodeToString(mac.Sum(nil)), nil
 }
 
+// prepareBankCard stores the identity of a bank card. A real card number is
+// verified and reduced to its last four digits plus a fingerprint, any other
+// text is kept as the note of the account, so the user can also fill in a
+// remark instead of a card number.
 func prepareBankCard(db *gorm.DB, account *PersonalAccount, cardNumber string) error {
-	normalized, err := normalizeCardNumber(cardNumber)
+	trimmed := strings.TrimSpace(cardNumber)
+	if trimmed == "" {
+		return nil
+	}
+	digits, isNumber := cardNumberDigits(trimmed)
+	// A short number is a note as well, only a full card number is verified.
+	if !isNumber || len(digits) < 12 || len(digits) > 19 {
+		account.Identifier = cleanText(trimmed, 64)
+		return nil
+	}
+	normalized, err := normalizeCardNumber(digits)
 	if err != nil {
 		return err
 	}
@@ -376,14 +404,17 @@ func handleCreatePersonalAccount(db *gorm.DB) gin.HandlerFunc {
 					response.ErrorBadRequest(c, err.Error())
 					return
 				}
-				duplicate, err := duplicateCard(db, account.UserID, *account.CardFingerprint, 0)
-				if err != nil {
-					response.ErrorInternal(c, "校验银行卡失败")
-					return
-				}
-				if duplicate {
-					response.ErrorBadRequest(c, "这张银行卡已经添加过了")
-					return
+				// Only a real card number can be a duplicate.
+				if account.CardFingerprint != nil {
+					duplicate, err := duplicateCard(db, account.UserID, *account.CardFingerprint, 0)
+					if err != nil {
+						response.ErrorInternal(c, "校验银行卡失败")
+						return
+					}
+					if duplicate {
+						response.ErrorBadRequest(c, "这张银行卡已经添加过了")
+						return
+					}
 				}
 			}
 		}
@@ -434,14 +465,17 @@ func handleUpdatePersonalAccount(db *gorm.DB) gin.HandlerFunc {
 					response.ErrorBadRequest(c, err.Error())
 					return
 				}
-				duplicate, err := duplicateCard(db, c.GetUint("userID"), *account.CardFingerprint, existing.ID)
-				if err != nil {
-					response.ErrorInternal(c, "校验银行卡失败")
-					return
-				}
-				if duplicate {
-					response.ErrorBadRequest(c, "这张银行卡已经添加过了")
-					return
+				// Only a real card number can be a duplicate.
+				if account.CardFingerprint != nil {
+					duplicate, err := duplicateCard(db, c.GetUint("userID"), *account.CardFingerprint, existing.ID)
+					if err != nil {
+						response.ErrorInternal(c, "校验银行卡失败")
+						return
+					}
+					if duplicate {
+						response.ErrorBadRequest(c, "这张银行卡已经添加过了")
+						return
+					}
 				}
 			} else if existing.Type == AccountTypeBankCard {
 				account.Identifier = existing.Identifier

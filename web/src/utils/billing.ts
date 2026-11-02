@@ -98,6 +98,65 @@ export function formatDate(value: string) {
   }).format(new Date(value))
 }
 
+/** 只显示时间，日期由分组标题承担。 */
+export function formatTime(value: string) {
+  if (!value) return ''
+  return new Intl.DateTimeFormat('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
+export interface TransactionDayGroup<T> {
+  /** 本地日期，形如 2026-11-02。 */
+  key: string
+  /** 分组标题，例如 11月2日 周一。 */
+  label: string
+  /** 今天、昨天等相对称呼，没有则为空。 */
+  relative: string
+  items: T[]
+}
+
+/** 取本地日期，避免时区把账单挪到相邻的一天。 */
+function localDateKey(value: Date) {
+  const offset = value.getTimezoneOffset() * 60_000
+  return new Date(value.getTime() - offset).toISOString().slice(0, 10)
+}
+
+function dayLabel(key: string, now: Date) {
+  const [year, month, day] = key.split('-').map(Number)
+  const date = new Date(year, month - 1, day)
+  const weekday = new Intl.DateTimeFormat('zh-CN', { weekday: 'short' }).format(date)
+  const prefix = year === now.getFullYear() ? '' : `${year}年`
+  return `${prefix}${month}月${day}日 ${weekday}`
+}
+
+function relativeDayLabel(key: string, now: Date) {
+  if (key === localDateKey(now)) return '今天'
+  if (key === localDateKey(new Date(now.getTime() - 86_400_000))) return '昨天'
+  return ''
+}
+
+/**
+ * 把账单按自然日分组，列表按日期倒序，所以同一天的账单会排在一起。
+ * 分组标题带上星期与今天/昨天，核对时不用逐条看日期。
+ */
+export function groupTransactionsByDay<T extends { occurred_at: string }>(items: T[], now: Date = new Date()): Array<TransactionDayGroup<T>> {
+  const groups = new Map<string, TransactionDayGroup<T>>()
+  items.forEach(item => {
+    const date = new Date(item.occurred_at)
+    if (Number.isNaN(date.getTime())) return
+    const key = localDateKey(date)
+    let group = groups.get(key)
+    if (!group) {
+      group = { key, label: dayLabel(key, now), relative: relativeDayLabel(key, now), items: [] }
+      groups.set(key, group)
+    }
+    group.items.push(item)
+  })
+  return [...groups.values()]
+}
+
 export function apiMessage(error: any, fallback = '操作失败') {
   return error?.response?.data?.message || fallback
 }
