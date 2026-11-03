@@ -116,7 +116,8 @@
               </article>
             </template>
           </div>
-          <div class="flex items-center justify-between border-t border-border px-3 py-2.5 sm:px-4 sm:py-3"><span class="text-xs text-muted-foreground">共 {{ total }} 笔</span><div class="flex gap-2"><button class="btn-ghost min-h-11 px-3" :disabled="page <= 1" @click="changePage(page - 1)">上一页</button><button class="btn-ghost min-h-11 px-3" :disabled="page * pageSize >= total" @click="changePage(page + 1)">下一页</button></div></div>
+          <div ref="sentinelRef" class="h-px w-full" aria-hidden="true"></div>
+          <div class="flex items-center justify-between border-t border-border px-3 py-2.5 sm:px-4 sm:py-3"><span class="text-xs text-muted-foreground">已加载 {{ items.length }} 笔，共 {{ total }} 笔</span><span class="text-xs text-muted-foreground">{{ loadingMore ? '加载中…' : hasMore ? '下滑加载更多' : '没有更多了' }}</span></div>
         </template>
       </section>
     </template>
@@ -174,7 +175,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useDataShareStore } from '../stores/dataShare'
 import { billingApi, type BillAttachment, type BillKind, type PersonalAccount, type PersonalBillKind, type PersonalCategory, type PersonalLedger, type PersonalTag, type PersonalTransaction, type RefundableTransaction } from '../api/billing'
@@ -195,7 +196,13 @@ const route = useRoute()
 const shareStore = useDataShareStore()
 const items = ref<PersonalTransaction[]>([]), ledgers = ref<PersonalLedger[]>([]), accounts = ref<PersonalAccount[]>([]), categories = ref<PersonalCategory[]>([]), tags = ref<PersonalTag[]>([])
 const refundSources = ref<RefundableTransaction[]>([]), refundSourcesLoading = ref(false), refundKeyword = ref('')
-const total = ref(0), page = ref(1), pageSize = 20
+const total = ref(0), pageSize = 20
+// The list grows while the user scrolls, so the bills of the first and the
+// second page follow each other in one list.
+const loadingMore = ref(false)
+const hasMore = computed(() => items.value.length < total.value)
+const sentinelRef = ref<HTMLElement | null>(null)
+let sentinelObserver: IntersectionObserver | null = null
 const filters = reactive({ q: '', ledger_id: '', account_id: '', tag_id: '', kind: '', category: '', start: '', end: '' })
 // The year and month pickers are shortcuts for the date range, they are not
 // sent to the server.
@@ -267,7 +274,7 @@ const monthOptions = computed(() => Array.from({ length: 12 }, (_, index) => ind
 
 function listData<T>(response: any): T[] { const data = response.data?.data; return Array.isArray(data) ? data : data?.items || [] }
 function notify(message: string, type: 'success' | 'error' = 'success') { toast.message = ''; setTimeout(() => { toast.message = message; toast.type = type }) }
-function params() { return { ...filters, ...shareStore.ownerParam, page: page.value, pageSize } }
+function params(offset = 0) { return { ...filters, ...shareStore.ownerParam, offset, pageSize } }
 function ledgerName(item: PersonalTransaction) { return item.ledger_name || ledgers.value.find(ledger => ledger.id === item.ledger_id)?.name || '未知账本' }
 function isTransfer(item: PersonalTransaction) { return item.kind === 'transfer' }
 function isRefund(item: PersonalTransaction) { return item.kind === 'refund' }
@@ -298,8 +305,15 @@ function syncLedgerFilterFromRoute() { const raw = Array.isArray(route.query.led
 // in the query, so the list opens on the bills of that account.
 function syncAccountFilterFromRoute() { const raw = Array.isArray(route.query.account_id) ? route.query.account_id[0] : route.query.account_id; const id = Number(raw); filters.account_id = Number.isInteger(id) && accounts.value.some(account => account.id === id) ? String(id) : '' }
 async function loadResources() { resourcesLoading.value = true; try { const ownerId = shareStore.currentOwnerId; const [ledgerRes, accountRes, categoryRes, tagRes] = await Promise.all([billingApi.personalLedgers(false, ownerId), billingApi.personalAccounts(false, ownerId), billingApi.personalCategories(ownerId), billingApi.personalTags(ownerId)]); ledgers.value = listData(ledgerRes); accounts.value = listData(accountRes); categories.value = listData(categoryRes); tags.value = listData(tagRes) } catch (error) { notify(apiMessage(error, '记账资料加载失败'), 'error') } finally { resourcesLoading.value = false } }
-async function load() { if (!ledgers.value.length) { items.value = []; total.value = 0; return } loading.value = true; try { const res = await billingApi.personalList(params()); items.value = res.data.data?.items || []; total.value = res.data.data?.total || 0 } catch (error) { notify(apiMessage(error, '账单加载失败'), 'error') } finally { loading.value = false } }
-function applyFilters(options: { collapse?: boolean } = {}) { filterError.value = ''; if (filters.start && filters.end && filters.start > filters.end) { filterError.value = '开始日期不能晚于结束日期'; return } page.value = 1; if (options.collapse !== false) filtersExpanded.value = false; load() }
+async function load() { if (!ledgers.value.length) { items.value = []; total.value = 0; return } loading.value = true; try { const res = await billingApi.personalList(params(0)); items.value = res.data.data?.items || []; total.value = res.data.data?.total || 0 } catch (error) { notify(apiMessage(error, '账单加载失败'), 'error') } finally { loading.value = false } }
+// loadMore appends the next page to the list. The offset is the number of
+// bills that are on screen, so the list stays correct after a bill was
+// deleted in the middle of it.
+async function loadMore() { if (loading.value || loadingMore.value || !hasMore.value) return; loadingMore.value = true; try { const res = await billingApi.personalList(params(items.value.length)); const next = (res.data.data?.items || []) as PersonalTransaction[]; const known = new Set(items.value.map(item => item.id)); items.value = [...items.value, ...next.filter(item => !known.has(item.id))]; total.value = res.data.data?.total ?? total.value } catch (error) { notify(apiMessage(error, '账单加载失败'), 'error') } finally { loadingMore.value = false } }
+// The sentinel at the end of the list pulls the next page as soon as it comes
+// into view.
+function observeSentinel() { sentinelObserver?.disconnect(); sentinelObserver = null; if (!sentinelRef.value) return; sentinelObserver = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) loadMore() }, { rootMargin: '240px 0px' }); sentinelObserver.observe(sentinelRef.value) }
+function applyFilters(options: { collapse?: boolean } = {}) { filterError.value = ''; if (filters.start && filters.end && filters.start > filters.end) { filterError.value = '开始日期不能晚于结束日期'; return } if (options.collapse !== false) filtersExpanded.value = false; load() }
 function resetFilters() { Object.assign(filters, { q: '', ledger_id: '', account_id: '', tag_id: '', kind: '', category: '', start: '', end: '' }); quickRange.year = ''; quickRange.month = ''; applyFilters() }
 function localDate(value: Date) {
   const offset = value.getTimezoneOffset() * 60_000
@@ -361,7 +375,6 @@ async function loadYears() {
     availableYears.value = Array.from({ length: 6 }, (_, index) => currentYear - index)
   }
 }
-function changePage(value: number) { page.value = value; load() }
 function resetForm() { editing.value = null; Object.assign(form, { ledger_id: Number(filters.ledger_id) || ledgers.value[0]?.id || 0, account_id: pickDefaultAccountId(accounts.value, [Number(filters.account_id) || 0, readLastAccountId()]), counterpart_account_id: 0, refund_source_id: 0, kind: 'expense', amount: '', category: '', tag_ids: [], note: '', occurred_at: toLocalInput(), attachments: [] }); formError.value = ''; attachmentUploading.value = false }
 function openCreate() { if (shareStore.isSharedView) return; if (!ledgers.value.length) return; resetForm(); showForm.value = true }
 function openEdit(item: PersonalTransaction) { if (shareStore.isSharedView) return; editing.value = item; const transfer = item.kind === 'transfer'; const refund = item.kind === 'refund'; refundKeyword.value = ''; Object.assign(form, { ledger_id: item.ledger_id, account_id: item.account_id, counterpart_account_id: transfer ? (item.counterpart_account_id || 0) : 0, refund_source_id: refund ? (item.refund_source_id || 0) : 0, kind: item.kind, amount: centsToMoney(item.amount_cents), category: transfer || refund ? '' : item.category, tag_ids: (item.tags || []).map(tag => tag.id), note: item.note, occurred_at: toLocalInput(item.occurred_at), attachments: [...(item.attachments || [])] }); formError.value = ''; attachmentUploading.value = false; showForm.value = true; if (refund && !refundSourceLocked.value) loadRefundSources() }
@@ -406,18 +419,34 @@ function refundAllAmount() {
   form.amount = centsToMoney(source.refundable_cents)
 }
 function handleTagCreated(tag: PersonalTag) { if (!tags.value.some(item => item.id === tag.id)) tags.value.push(tag) }
-async function save() { const amount = moneyToCents(form.amount); if (!form.ledger_id) { formError.value = '请选择账本'; return } const transfer = form.kind === 'transfer'; const refund = form.kind === 'refund'; if (transfer) { const message = validateTransferAccounts(form.account_id, form.counterpart_account_id); if (message) { formError.value = message; return } } else if (refund) { if (!form.refund_source_id) { formError.value = '请选择原支出的账单'; return } if (!form.account_id) { formError.value = '请选择退款到账账户'; return } const source = refundSourceInfo.value; const refundMessage = validateRefundAmount(amount, source?.refundable_cents || 0); if (refundMessage) { formError.value = refundMessage; return } } else { if (!form.account_id) { formError.value = '请选择收支账户'; return } if (!form.category) { formError.value = '请选择分类'; return } } if (amount <= 0) { formError.value = '请输入大于 0 的金额'; return } saving.value = true; formError.value = ''; try { const payload = { ledger_id: form.ledger_id, account_id: form.account_id, counterpart_account_id: transfer ? form.counterpart_account_id : 0, refund_source_id: refund ? form.refund_source_id : 0, kind: form.kind, amount_cents: amount, category: transfer ? transferCategory : refund ? refundCategory : form.category, tag_ids: form.tag_ids, note: form.note.trim(), occurred_at: new Date(form.occurred_at).toISOString(), attachments: form.attachments.map(({ path, name }) => ({ path, name })) }; if (editing.value) await billingApi.personalUpdate(editing.value.id, payload); else await billingApi.personalCreate(payload); rememberAccountId(form.account_id); showForm.value = false; notify(editing.value ? '账单已更新' : '账单已记录'); load() } catch (error) { formError.value = apiMessage(error) } finally { saving.value = false } }
+async function save() { const amount = moneyToCents(form.amount); if (!form.ledger_id) { formError.value = '请选择账本'; return } const transfer = form.kind === 'transfer'; const refund = form.kind === 'refund'; if (transfer) { const message = validateTransferAccounts(form.account_id, form.counterpart_account_id); if (message) { formError.value = message; return } } else if (refund) { if (!form.refund_source_id) { formError.value = '请选择原支出的账单'; return } if (!form.account_id) { formError.value = '请选择退款到账账户'; return } const source = refundSourceInfo.value; const refundMessage = validateRefundAmount(amount, source?.refundable_cents || 0); if (refundMessage) { formError.value = refundMessage; return } } else { if (!form.account_id) { formError.value = '请选择收支账户'; return } if (!form.category) { formError.value = '请选择分类'; return } } if (amount <= 0) { formError.value = '请输入大于 0 的金额'; return } saving.value = true; formError.value = ''; try { const payload = { ledger_id: form.ledger_id, account_id: form.account_id, counterpart_account_id: transfer ? form.counterpart_account_id : 0, refund_source_id: refund ? form.refund_source_id : 0, kind: form.kind, amount_cents: amount, category: transfer ? transferCategory : refund ? refundCategory : form.category, tag_ids: form.tag_ids, note: form.note.trim(), occurred_at: new Date(form.occurred_at).toISOString(), attachments: form.attachments.map(({ path, name }) => ({ path, name })) }; if (editing.value) { const res = await billingApi.personalUpdate(editing.value.id, payload); const updated = res.data?.data as PersonalTransaction | undefined; if (updated) items.value = items.value.map(entry => entry.id === updated.id ? { ...entry, ...updated } : entry) } else { await billingApi.personalCreate(payload); await load(); window.scrollTo({ top: 0, behavior: 'smooth' }) } rememberAccountId(form.account_id); showForm.value = false; notify(editing.value ? '账单已更新' : '账单已记录') } catch (error) { formError.value = apiMessage(error) } finally { saving.value = false } }
 function askDelete(item: PersonalTransaction) { if (shareStore.isSharedView) return; deleting.value = item; showDelete.value = true }
-async function deleteItem() { if (!deleting.value) return; try { await billingApi.personalDelete(deleting.value.id); notify('账单已删除'); if (items.value.length === 1 && page.value > 1) page.value--; load() } catch (error) { notify(apiMessage(error), 'error') } }
+async function deleteItem() {
+  if (!deleting.value) return
+  const id = deleting.value.id
+  try {
+    await billingApi.personalDelete(id)
+    notify('账单已删除')
+    // The bill leaves the list right away, the next page continues where the
+    // list ends now.
+    items.value = items.value.filter(item => item.id !== id)
+    total.value = Math.max(0, total.value - 1)
+  } catch (error) {
+    notify(apiMessage(error), 'error')
+  }
+}
 async function exportCsv() { exporting.value = true; try { const res = await billingApi.personalExport({ ...filters, ...shareStore.ownerParam }); const url = URL.createObjectURL(new Blob([res.data], { type: 'text/csv;charset=utf-8' })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `个人账单-${new Date().toISOString().slice(0, 10)}.csv`; anchor.click(); URL.revokeObjectURL(url) } catch (error) { notify(apiMessage(error, '导出失败'), 'error') } finally { exporting.value = false } }
-watch(() => route.query.ledger_id, async () => { if (resourcesLoading.value) return; syncLedgerFilterFromRoute(); page.value = 1; await load() })
-watch(() => route.query.account_id, async () => { if (resourcesLoading.value) return; syncAccountFilterFromRoute(); page.value = 1; await load() })
-watch(() => shareStore.currentOwnerId, async () => { filters.ledger_id = ''; filters.account_id = ''; filters.tag_id = ''; filters.category = ''; await Promise.all([loadResources(), loadYears()]); syncLedgerFilterFromRoute(); syncAccountFilterFromRoute(); page.value = 1; await load() })
+watch(() => route.query.ledger_id, async () => { if (resourcesLoading.value) return; syncLedgerFilterFromRoute(); await load() })
+watch(() => route.query.account_id, async () => { if (resourcesLoading.value) return; syncAccountFilterFromRoute(); await load() })
+watch(() => shareStore.currentOwnerId, async () => { filters.ledger_id = ''; filters.account_id = ''; filters.tag_id = ''; filters.category = ''; await Promise.all([loadResources(), loadYears()]); syncLedgerFilterFromRoute(); syncAccountFilterFromRoute(); await load() })
 watch(() => form.refund_source_id, id => {
   if (form.kind !== 'refund' || !id) return
   // Editing a refund keeps its own amount; picking another source bill resets it.
   if (editing.value && id === editing.value.refund_source_id) return
   selectRefundSource(id)
 })
+// The sentinel moves with the list, so it is watched after every change.
+watch(items, () => { nextTick(observeSentinel) }, { flush: 'post' })
 onMounted(async () => { await Promise.all([loadResources(), loadYears()]); syncLedgerFilterFromRoute(); syncAccountFilterFromRoute(); await load() })
+onBeforeUnmount(() => sentinelObserver?.disconnect())
 </script>

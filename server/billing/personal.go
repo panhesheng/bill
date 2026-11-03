@@ -232,6 +232,12 @@ func handleListPersonal(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		page, pageSize := utils.NormalizePage(utils.Atoi(c.Query("page"), 1), utils.Atoi(c.Query("pageSize"), 20))
+		offset := utils.Offset(page, pageSize)
+		// The scrolling list reads the bills with an offset instead of a page,
+		// so it keeps working after a bill was deleted and the pages shift.
+		if value, err := strconv.Atoi(c.Query("offset")); err == nil && value >= 0 {
+			offset = value
+		}
 		query := personalQuery(db, ownerID, c)
 		var total int64
 		if err := query.Count(&total).Error; err != nil {
@@ -239,7 +245,7 @@ func handleListPersonal(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		var items []PersonalTransaction
-		if err := query.Order("occurred_at DESC, id DESC").Offset(utils.Offset(page, pageSize)).Limit(pageSize).Find(&items).Error; err != nil {
+		if err := query.Order("occurred_at DESC, id DESC").Offset(offset).Limit(pageSize).Find(&items).Error; err != nil {
 			response.ErrorInternal(c, "获取账单失败")
 			return
 		}
